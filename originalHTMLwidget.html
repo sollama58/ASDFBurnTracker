@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ASDFASDFA Burn & Cultist Donations</title>
+  <style>
+    :root {
+      --bg: #101010;
+      --panel-bg: #181818;
+      --accent: #ffd700;
+      --accent-soft: #ffe870;
+      --muted: #aaaaaa;
+      --danger: #ff5c33;
+      --border: #303030;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--accent);
+      word-break: normal;
+      overflow-wrap: break-word;
+    }
+
+    .asdf-widget {
+      width: 100%;
+      max-width: 1100px;
+      margin: 1.5rem auto;
+      padding: 1.5rem;
+      background: radial-gradient(circle at top, #222 0, #101010 55%);
+      border-radius: 18px;
+      box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
+      box-sizing: border-box;
+    }
+
+    .asdf-widget-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+      gap: 1.75rem;
+      align-items: flex-start;
+    }
+
+    @media (max-width: 900px) {
+      .asdf-widget-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1.3rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--accent-soft);
+    }
+
+    h3 {
+      margin: 0 0 0.5rem;
+      font-size: 1.05rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--accent-soft);
+    }
+
+    .section-card {
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.6));
+      border-radius: 14px;
+      padding: 1.25rem;
+      border: 1px solid var(--border);
+      box-sizing: border-box;
+    }
+
+    .section-subtitle {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+    }
+
+    .label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .value-alt {
+      color: #9be7ff;
+    }
+
+    .mono {
+      font-family: "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+        monospace;
+    }
+
+    /* Burn progress bar */
+
+    .burn-bar-wrapper {
+      margin-top: 0.8rem;
+    }
+
+    .burn-bar-bg {
+      position: relative;
+      width: 100%;
+      height: 34px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #1b1b1b, #242424);
+      overflow: hidden;
+      box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.9);
+    }
+
+    .burn-bar-fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 0%;
+      background: linear-gradient(90deg, #ffcc33, #ff9c33, #ff5c33, #ff2e2e);
+      box-shadow: 0 0 24px rgba(255, 120, 0, 0.7);
+      transition: width 0.9s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    .burn-wall {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 0;
+    }
+
+    .burn-wall::before {
+      content: "🔥🔥🔥";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -55%);
+      font-size: 0.9rem;
+      text-shadow: 0 0 6px rgba(255, 120, 0, 1);
+      opacity: 0.8;
+    }
+
+    .burn-current-flame {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 1.4rem;
+      text-shadow: 0 0 10px rgba(255, 160, 0, 0.9);
+      animation: burn-flicker 0.6s infinite alternate ease-in-out;
+      pointer-events: none;
+    }
+
+    @keyframes burn-flicker {
+      0% {
+        transform: translate(-50%, -48%) scale(1);
+        opacity: 0.8;
+      }
+      100% {
+        transform: translate(-50%, -54%) scale(1.12);
+        opacity: 1;
+      }
+    }
+
+    .burn-scale {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 0.35rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .burn-stats {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.25rem;
+      margin-top: 0.4rem;
+      font-size: 0.8rem;
+    }
+
+    .burn-stats span {
+      white-space: normal;
+    }
+
+    .burn-percent-text {
+      color: var(--accent-soft);
+      font-weight: 600;
+    }
+
+    .burn-cap {
+      color: #ff8c8c;
+      font-weight: 600;
+    }
+
+    .status-line {
+      margin-top: 0.4rem;
+      font-size: 0.74rem;
+      color: var(--muted);
+    }
+
+    .status-line.error {
+      color: #ff7a7a;
+    }
+
+    /* Wallet and donations */
+
+    .wallet-main-stats {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+
+    @media (max-width: 650px) {
+      .wallet-main-stats {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .stat-card {
+      background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.06), transparent 60%);
+      border-radius: 12px;
+      padding: 0.75rem 0.85rem;
+      border: 1px solid var(--border);
+      box-sizing: border-box;
+    }
+
+    .stat-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 0.2rem;
+    }
+
+    .stat-value-main {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 0.1rem;
+    }
+
+    .stat-value-sub {
+      font-size: 0.9rem;
+      color: var(--accent-soft);
+    }
+
+    .cultist-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+    }
+
+    @media (max-width: 650px) {
+      .cultist-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .cultist-card {
+      background: linear-gradient(135deg, rgba(255, 80, 0, 0.35), rgba(0, 0, 0, 0.9));
+      border-radius: 12px;
+      padding: 0.8rem 0.9rem;
+      border: 1px solid rgba(255, 90, 0, 0.6);
+      box-shadow: 0 0 24px rgba(255, 80, 0, 0.3);
+      box-sizing: border-box;
+    }
+
+    .cultist-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 0.35rem;
+      color: #ffe0a0;
+    }
+
+    .cultist-amount {
+      font-size: 1.25rem;
+      font-weight: 800;
+    }
+
+    .cultist-usd {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #9be7ff;
+    }
+  </style>
+</head>
+<body>
+<div class="asdf-widget">
+  <div class="asdf-widget-grid">
+    <!-- LEFT: Burn progress (unchanged visually) -->
+    <section>
+      <div class="section-card">
+        <div class="section-subtitle">ASDFASDFA Token</div>
+        <h2>Burn Progress</h2>
+
+        <div class="burn-stats">
+          <span>
+            Burned:
+            <span class="burn-percent-text" id="burnPercent">--</span>%
+          </span>
+          <span>
+            Removed from circulation:
+            <span class="mono" id="burnAmount">--</span> /
+            <span class="mono">1,000,000,000</span> ASDFASDFA
+          </span>
+          <span>
+            Current supply:
+            <span class="mono" id="currentSupply">--</span> ASDFASDFA
+          </span>
+        </div>
+
+        <div class="burn-bar-wrapper">
+          <div class="burn-bar-bg">
+            <div class="burn-bar-fill" id="burnBarFill"></div>
+
+            <!-- Flame walls at 0, 5, 10, 15, 20, 25 -->
+            <div class="burn-wall" style="left: 0%;"></div>
+            <div class="burn-wall" style="left: 20%;"></div>
+            <div class="burn-wall" style="left: 40%;"></div>
+            <div class="burn-wall" style="left: 60%;"></div>
+            <div class="burn-wall" style="left: 80%;"></div>
+            <div class="burn-wall" style="left: 100%;"></div>
+
+            <div class="burn-current-flame" id="burnCurrentFlame">🔥</div>
+          </div>
+
+          <div class="burn-scale">
+            <span>0%</span>
+            <span>5%</span>
+            <span>10%</span>
+            <span>15%</span>
+            <span>20%</span>
+            <span>25%</span>
+          </div>
+        </div>
+
+        <div class="status-line" id="burnStatus">Loading burn data via Helius…</div>
+      </div>
+    </section>
+
+    <!-- RIGHT: Wallet tracker -->
+    <section>
+      <div class="section-card">
+        <div class="section-subtitle">Wallet Tracker</div>
+        <h2>Flame Ledger</h2>
+
+        <div class="label mono" style="font-size:0.75rem;">
+          Address: <span id="walletDisplay">vcGYZbvDid6cRUkCCqcWpBxow73TLpmY6ipmDUtrTF8</span>
+        </div>
+
+        <div class="wallet-main-stats">
+          <div class="stat-card">
+            <div class="stat-title">CTO Fees Recived</div>
+            <div class="stat-value-main">
+              <span id="ctoFeesSol">--</span> <span class="mono">SOL</span>
+            </div>
+            <div class="stat-title" style="margin-top:0.35rem;">USD Value</div>
+            <div class="stat-value-sub" id="ctoFeesUsd">--</div>
+          </div>
+
+          <div class="stat-card">
+            <div class="stat-title">ASDF Purchased (From DuhR...)</div>
+            <div class="stat-value-main" id="purchasedFromSource">--</div>
+          </div>
+        </div>
+
+        <div style="margin-top: 0.9rem;">
+          <h3>Cultist Donations</h3>
+          <div class="cultist-grid">
+            <div class="cultist-card">
+              <div class="cultist-title">ASDF Sacrificed</div>
+              <div class="cultist-amount" id="asdfSacrificed">--</div>
+            </div>
+            <div class="cultist-card">
+              <div class="cultist-title">USD Value</div>
+              <div class="cultist-usd" id="asdfSacrificedUsd">--</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="status-line" id="walletStatus">
+          Loading wallet history and price data (Helius + CoinGecko + Jupiter)…
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+  (function () {
+    // --- CONFIG ----------------------------------------------------------------
+    const TOKEN_MINT = "9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump";
+    const TOKEN_TICKER_SHORT = "ASDF";
+    const TOKEN_TICKER_LONG = "ASDFASDFA";
+    const TOKEN_TOTAL_SUPPLY = 1_000_000_000;
+
+    const TRACKED_WALLET = "vcGYZbvDid6cRUkCCqcWpBxow73TLpmY6ipmDUtrTF8";
+
+    // Any ASDF received FROM this address is treated as "purchased"
+    const PURCHASE_SOURCE_ADDRESS = "DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb";
+
+    const HELIUS_API_KEY = "f171f1e4-6e9a-4295-b4d6-a7b43a968c6a";
+    const HELIUS_RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
+    const HELIUS_ENHANCED_BASE = "https://api-mainnet.helius-rpc.com/v0";
+
+    // CoinGecko Demo API (for historical SOL pricing)
+    const COINGECKO_DEMO_KEY = "CG-KsYLbF8hxVytbPTNyLXe7vWA";
+    const COINGECKO_SOL_ID = "solana";
+    const COINGECKO_BASE = "https://api.coingecko.com/api/v3";
+
+    // Jupiter price API
+    const JUP_PRICE_URL = "https://lite-api.jup.ag/price/v3";
+
+    // Global burned amount (ASDFASDFA removed from circulation)
+    let burnedGlobal = null;
+
+    // --- DOM REFS --------------------------------------------------------------
+    const burnPercentEl = document.getElementById("burnPercent");
+    const burnAmountEl = document.getElementById("burnAmount");
+    const currentSupplyEl = document.getElementById("currentSupply");
+    const burnBarFillEl = document.getElementById("burnBarFill");
+    const burnFlameEl = document.getElementById("burnCurrentFlame");
+    const burnStatusEl = document.getElementById("burnStatus");
+
+    const walletDisplayEl = document.getElementById("walletDisplay");
+    const ctoFeesSolEl = document.getElementById("ctoFeesSol");
+    const ctoFeesUsdEl = document.getElementById("ctoFeesUsd");
+    const purchasedFromSourceEl = document.getElementById("purchasedFromSource");
+    const asdfSacrificedEl = document.getElementById("asdfSacrificed");
+    const asdfSacrificedUsdEl = document.getElementById("asdfSacrificedUsd");
+    const walletStatusEl = document.getElementById("walletStatus");
+
+    walletDisplayEl.textContent = TRACKED_WALLET;
+
+    // --- UTILS -----------------------------------------------------------------
+
+    function formatNumber(n, decimals = 2) {
+      if (typeof n !== "number" || !isFinite(n)) return "--";
+      return n.toLocaleString("en-US", {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+      });
+    }
+
+    function formatInteger(n) {
+      if (typeof n !== "number" || !isFinite(n)) return "--";
+      return Math.round(n).toLocaleString("en-US");
+    }
+
+    function clamp(v, min, max) {
+      return Math.max(min, Math.min(max, v));
+    }
+
+    // --- BURN SECTION ----------------------------------------------------------
+
+    async function fetchCurrentTokenSupplyUi() {
+      const body = {
+        jsonrpc: "2.0",
+        id: "burn-supply",
+        method: "getTokenSupply",
+        params: [TOKEN_MINT]
+      };
+
+      const res = await fetch(HELIUS_RPC_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        throw new Error(`getTokenSupply failed: HTTP ${res.status}`);
+      }
+
+      const json = await res.json();
+      if (!json.result || !json.result.value) {
+        throw new Error("getTokenSupply: missing result.value");
+      }
+
+      const { uiAmount, uiAmountString } = json.result.value;
+      const supplyUi =
+        typeof uiAmount === "number"
+          ? uiAmount
+          : uiAmountString
+          ? parseFloat(uiAmountString)
+          : null;
+
+      if (!isFinite(supplyUi)) {
+        throw new Error("getTokenSupply: invalid uiAmount");
+      }
+
+      return supplyUi;
+    }
+
+    function updateBurnBar(burnedPercent) {
+      const clampedForBar = clamp(burnedPercent, 0, 25);
+      const barPct = (clampedForBar / 25) * 100;
+
+      burnBarFillEl.style.width = barPct.toFixed(2) + "%";
+      burnFlameEl.style.left = barPct.toFixed(2) + "%";
+    }
+
+    async function updateBurnSection() {
+      try {
+        burnStatusEl.textContent = "Loading burn data via Helius…";
+
+        const currentSupply = await fetchCurrentTokenSupplyUi();
+
+        const burned = TOKEN_TOTAL_SUPPLY - currentSupply; // total burnt amount
+        burnedGlobal = burned; // share with wallet section
+
+        const burnedPercent = (burned / TOKEN_TOTAL_SUPPLY) * 100;
+
+        burnPercentEl.textContent = burnedPercent.toFixed(2);
+        burnAmountEl.textContent = formatInteger(burned);
+        currentSupplyEl.textContent = formatInteger(currentSupply);
+
+        updateBurnBar(burnedPercent);
+
+        burnStatusEl.textContent = "Burn data loaded.";
+        burnStatusEl.classList.remove("error");
+      } catch (err) {
+        console.error(err);
+        burnStatusEl.textContent = "Failed to load burn data.";
+        burnStatusEl.classList.add("error");
+        burnPercentEl.textContent = "--";
+        burnAmountEl.textContent = "--";
+        currentSupplyEl.textContent = "--";
+        burnedGlobal = null;
+      }
+    }
+
+    // --- WALLET HISTORY: HELIUS ENHANCED TRANSACTIONS -------------------------
+
+    async function fetchAllEnhancedTransactions(address, maxPages = 20) {
+      const all = [];
+      let before = undefined;
+
+      for (let page = 0; page < maxPages; page++) {
+        const url = new URL(
+          `${HELIUS_ENHANCED_BASE}/addresses/${address}/transactions`
+        );
+        url.searchParams.set("api-key", HELIUS_API_KEY);
+        if (before) url.searchParams.set("before", before);
+
+        const res = await fetch(url.toString());
+        if (!res.ok) {
+          throw new Error(
+            `Helius enhanced transactions failed (page ${page}): HTTP ${res.status}`
+          );
+        }
+
+        const batch = await res.json();
+        if (!Array.isArray(batch) || batch.length === 0) break;
+
+        all.push(...batch);
+
+        const last = batch[batch.length - 1];
+        if (!last || !last.signature) break;
+        before = last.signature;
+
+        if (batch.length < 90) break;
+      }
+
+      return all;
+    }
+
+    function extractSolReceipts(transactions, wallet) {
+      const receipts = [];
+      let totalLamports = 0n;
+
+      for (const tx of transactions) {
+        const ts = tx.timestamp;
+        const transfers = tx.nativeTransfers || [];
+        for (const nt of transfers) {
+          if (nt.toUserAccount !== wallet) continue;
+
+          const rawAmt = nt.amount;
+          if (rawAmt == null) continue;
+          const lamports = BigInt(rawAmt.toString());
+          if (lamports <= 0n) continue;
+
+          totalLamports += lamports;
+          receipts.push({ lamports, timestamp: ts });
+        }
+      }
+
+      const totalSol = Number(totalLamports) / 1e9;
+
+      return { receipts, totalLamports, totalSol };
+    }
+
+    // --- COINGECKO HISTORICAL PRICES (DEMO) -----------------------------------
+
+    async function fetchSolHistoricalPrices(fromSec, toSec) {
+      const from = Math.max(0, fromSec - 3600);
+      const to = toSec + 3600;
+
+      const url = new URL(
+        `${COINGECKO_BASE}/coins/${COINGECKO_SOL_ID}/market_chart/range`
+      );
+      url.searchParams.set("vs_currency", "usd");
+      url.searchParams.set("from", String(from));
+      url.searchParams.set("to", String(to));
+      url.searchParams.set("x_cg_demo_api_key", COINGECKO_DEMO_KEY);
+
+      const res = await fetch(url.toString());
+
+      if (!res.ok) {
+        throw new Error(
+          `CoinGecko market_chart/range (demo) failed: HTTP ${res.status}`
+        );
+      }
+
+      const json = await res.json();
+      if (!Array.isArray(json.prices)) {
+        throw new Error("CoinGecko response missing prices[]");
+      }
+
+      return json.prices.map(([tMs, price]) => ({
+        tMs: Number(tMs),
+        priceUsd: Number(price)
+      }));
+    }
+
+    function nearestPriceUsd(priceSeries, targetMs) {
+      if (!priceSeries.length) return null;
+      let best = priceSeries[0].priceUsd;
+      let bestDiff = Math.abs(targetMs - priceSeries[0].tMs);
+
+      for (let i = 1; i < priceSeries.length; i++) {
+        const diff = Math.abs(targetMs - priceSeries[i].tMs);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = priceSeries[i].priceUsd;
+        } else if (priceSeries[i].tMs > targetMs && diff > bestDiff) {
+          break;
+        }
+      }
+      return best;
+    }
+
+    function computeLifetimeUsdFromReceipts(receipts, priceSeries) {
+      if (!receipts.length || !priceSeries.length) return 0;
+      let totalUsd = 0;
+      for (const r of receipts) {
+        const tMs = r.timestamp * 1000;
+        const priceUsd = nearestPriceUsd(priceSeries, tMs);
+        if (!isFinite(priceUsd) || priceUsd <= 0) continue;
+        const solAmount = Number(r.lamports) / 1e9;
+        totalUsd += solAmount * priceUsd;
+      }
+      return totalUsd;
+    }
+
+    // --- TOKEN FLOWS WITH ADDRESS-BASED "PURCHASED" LOGIC ---------------------
+
+    // totalReceived: all ASDF tokens ever received by wallet
+    // purchasedFromSource: ASDF received where fromUserAccount === PURCHASE_SOURCE_ADDRESS
+    function computeTokenFlows(transactions, wallet, mint) {
+      let totalReceived = 0;
+      let purchasedFromSource = 0;
+
+      for (const tx of transactions) {
+        const tokenTransfers = tx.tokenTransfers || [];
+
+        for (const tt of tokenTransfers) {
+          if (tt.mint !== mint) continue;
+          if (tt.toUserAccount !== wallet) continue;
+
+          const rawAmt = tt.tokenAmount;
+          const amt = rawAmt == null ? 0 : Number(rawAmt);
+          if (!isFinite(amt) || amt <= 0) continue;
+
+          // All ASDF received
+          totalReceived += amt;
+
+          // Treat any ASDF received FROM the given address as "purchased"
+          if ((tt.fromUserAccount || "") === PURCHASE_SOURCE_ADDRESS) {
+            purchasedFromSource += amt;
+          }
+        }
+      }
+
+      return { totalReceived, purchasedFromSource };
+    }
+
+    async function fetchJupiterUsdPrice(mint) {
+      const url = `${JUP_PRICE_URL}?ids=${encodeURIComponent(mint)}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`Jupiter price API failed: HTTP ${res.status}`);
+      }
+      const json = await res.json();
+      const entry = json[mint] || (json.data && json.data[mint]);
+      if (!entry || typeof entry.usdPrice !== "number") {
+        throw new Error("Jupiter: missing usdPrice for token");
+      }
+      return entry.usdPrice;
+    }
+
+    // --- WALLET SECTION UPDATE -------------------------------------------------
+
+    async function updateWalletSection() {
+      try {
+        walletStatusEl.textContent =
+          "Fetching enhanced transaction history from Helius…";
+
+        const txs = await fetchAllEnhancedTransactions(TRACKED_WALLET);
+
+        // Lifetime SOL received (CTO Fees)
+        const { receipts, totalSol } = extractSolReceipts(txs, TRACKED_WALLET);
+
+        let lifetimeUsd = 0;
+        if (receipts.length) {
+          walletStatusEl.textContent =
+            "Fetching historical SOL prices from CoinGecko (demo)…";
+
+          const timestamps = receipts.map((r) => r.timestamp);
+          const minTs = Math.min.apply(null, timestamps);
+          const maxTs = Math.max.apply(null, timestamps);
+
+          const priceSeries = await fetchSolHistoricalPrices(minTs, maxTs);
+          lifetimeUsd = computeLifetimeUsdFromReceipts(receipts, priceSeries);
+        }
+
+        // CTO Fees
+        ctoFeesSolEl.textContent = formatNumber(totalSol, 2);
+        ctoFeesUsdEl.textContent = "$" + formatNumber(lifetimeUsd, 2);
+
+        // Token flows for ASDF with "purchased from specific address" logic
+        walletStatusEl.textContent =
+          "Computing purchased tokens and Cultist Donations…";
+
+        const { totalReceived, purchasedFromSource } = computeTokenFlows(
+          txs,
+          TRACKED_WALLET,
+          TOKEN_MINT
+        );
+
+        // Display purchased tokens (from source address), rounded up
+        const purchasedRounded = Math.ceil(purchasedFromSource);
+        purchasedFromSourceEl.textContent =
+          formatInteger(purchasedRounded) + " " + TOKEN_TICKER_SHORT;
+
+        // ASDFASDFA Sacrificed = total burnt amount - purchased amount
+        let sacrificed = 0;
+        if (typeof burnedGlobal === "number" && isFinite(burnedGlobal)) {
+          sacrificed = Math.max(0, burnedGlobal - purchasedFromSource);
+        } else {
+          console.warn(
+            "Burned amount unavailable; cannot compute ASDFASDFA Sacrificed from burn."
+          );
+          sacrificed = 0;
+        }
+
+        const sacrificedRounded = Math.round(sacrificed);
+        asdfSacrificedEl.textContent =
+          formatInteger(sacrificedRounded);
+
+        // Current USD value of sacrificed tokens
+        let sacrificedUsdText = "--";
+        try {
+          const tokenUsdPrice = await fetchJupiterUsdPrice(TOKEN_MINT);
+          const currentUsd = sacrificed * tokenUsdPrice;
+          sacrificedUsdText = "$" + formatNumber(currentUsd, 2);
+        } catch (e) {
+          console.error("Jupiter price error:", e);
+        }
+        asdfSacrificedUsdEl.textContent = sacrificedUsdText;
+
+        walletStatusEl.textContent = "Wallet and Cultist data loaded.";
+        walletStatusEl.classList.remove("error");
+      } catch (err) {
+        console.error(err);
+        walletStatusEl.textContent =
+          "Failed to load wallet / donations data. Check API keys, rate limits, and CORS.";
+        walletStatusEl.classList.add("error");
+
+        ctoFeesSolEl.textContent = "--";
+        ctoFeesUsdEl.textContent = "--";
+        purchasedFromSourceEl.textContent = "--";
+        asdfSacrificedEl.textContent = "-- ASDFASDFA";
+        asdfSacrificedUsdEl.textContent = "--";
+      }
+    }
+
+    // --- INIT ------------------------------------------------------------------
+
+    async function init() {
+      // Ensure burn data is computed before we rely on it for "sacrificed"
+      await updateBurnSection();
+      await updateWalletSection();
+    }
+
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+      init();
+    } else {
+      document.addEventListener("DOMContentLoaded", init);
+    }
+  })();
+</script>
+</body>
+</html>
