@@ -16,7 +16,7 @@ function debugLog(category, message, isError = false) {
 // --- CACHING VARIABLES ---
 let cache = { 
     burn: {}, 
-    wallet: { tokenPriceUsd: 0 }, // Initialize tokenPriceUsd to 0 to ensure it exists
+    wallet: { tokenPriceUsd: 0 }, 
     lastUpdated: 0 
 };
 const CACHE_DURATION_MS = 60000; // 1 minute
@@ -30,7 +30,7 @@ if (!HELIUS_API_KEY) {
     process.exit(1); 
 }
 
-const TOKEN_MINT = "9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump";
+const TOKEN_MINT = "9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump"; // ASDF Contract Address
 const TOKEN_TOTAL_SUPPLY = 1_000_000_000;
 const TRACKED_WALLET = "vcGYZbvDid6cRUkCCqcWpBxow73TLpmY6ipmDUtrTF8";
 const PURCHASE_SOURCE_ADDRESS = "DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb";
@@ -53,13 +53,11 @@ async function exponentialBackoffFetch(url, options = {}, maxRetries = 5, catego
             if (res.ok) return res;
 
             if (res.status === 429 || res.status >= 500) {
-                // Rate limit or server error: retry with delay
                 const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
                 debugLog(category, `Attempt ${attempt + 1}: Received HTTP ${res.status}. Retrying in ${delay.toFixed(0)}ms...`);
                 await new Promise(resolve => setTimeout(resolve, delay));
                 continue; 
             }
-            // Non-retryable error (e.g., 400, 404)
             throw new Error(`API failed with non-retryable status: ${res.status}`);
 
         } catch (error) {
@@ -73,7 +71,9 @@ async function exponentialBackoffFetch(url, options = {}, maxRetries = 5, catego
     }
 }
 
-// --- LOGIC FUNCTIONS (Unchanged from previous versions) ---
+// --- LOGIC FUNCTIONS ---
+// NOTE: fetchCurrentTokenSupplyUi, fetchAllEnhancedTransactions, extractSolReceipts, 
+// fetchSolHistoricalPrices, computeLifetimeUsd, computeTokenFlows are unchanged.
 
 async function fetchCurrentTokenSupplyUi() {
     const body = { jsonrpc: "2.0", id: "burn-supply", method: "getTokenSupply", params: [TOKEN_MINT] };
@@ -102,9 +102,6 @@ async function fetchAllEnhancedTransactions(address, maxPages = 20) {
     }
     return all;
 }
-
-// NOTE: All other helper functions (extractSolReceipts, fetchSolHistoricalPrices, 
-// computeLifetimeUsd, computeTokenFlows) remain unchanged. 
 
 function extractSolReceipts(transactions, wallet) {
     const receipts = []; let totalLamports = 0n;
@@ -195,20 +192,17 @@ async function fetchAndCacheData() {
         const burnedPercent = (burned / TOKEN_TOTAL_SUPPLY) * 100;
         
         cache.burn = { burnedAmount: burned, currentSupply, burnedPercent };
-        debugLog("CACHE_MAIN", `Burn data calculated. Burned: ${burnedPercent.toFixed(2)}%`);
 
         // --- 2. WALLET DATA (HELIUS TXS) ---
         const txs = await fetchAllEnhancedTransactions(TRACKED_WALLET);
         const { receipts, totalSol: calculatedSol } = extractSolReceipts(txs, TRACKED_WALLET);
         totalSol = calculatedSol;
-        debugLog("CACHE_MAIN", `Found ${txs.length} transactions and ${receipts.length} SOL receipts.`);
 
         // --- 3. SOL HISTORICAL PRICES (COINGECKO) ---
         if (receipts.length > 0) {
             const timestamps = receipts.map(r => r.timestamp);
             const prices = await fetchSolHistoricalPrices(Math.min(...timestamps), Math.max(...timestamps));
             lifetimeUsd = computeLifetimeUsd(receipts, prices);
-            debugLog("CACHE_MAIN", `SOL lifetime USD calculated: $${lifetimeUsd.toFixed(2)}.`);
         } else {
             lifetimeUsd = 0;
         }
@@ -217,7 +211,6 @@ async function fetchAndCacheData() {
         purchasedFromSource = calculatedPurchased;
 
         // --- 4. CACHE STORAGE (Initial) ---
-        // Preserve existing tokenPriceUsd if it exists, otherwise use 0
         const existingTokenPrice = cache.wallet.tokenPriceUsd || 0;
         
         cache.wallet = { 
@@ -242,19 +235,23 @@ async function fetchJupiterPrice() {
     debugLog("CACHE_PRICE", "Starting Jupiter price fetch...");
     let tokenPriceUsd = 0;
     
+    // Ensure the correct TOKEN_MINT contract address is used in the URL
     let jupUrl = `${JUP_PRICE_URL}?ids=${TOKEN_MINT}`;
-    // Headers are needed if JUPITER_API_KEY were required by the endpoint
+    debugLog("CACHE_PRICE", `Requesting Jupiter URL: ${jupUrl}`);
+    
     const jupOptions = JUPITER_API_KEY ? { headers: { 'Authorization': `Bearer ${JUPITER_API_KEY}` } } : {};
 
     try {
         const jupRes = await exponentialBackoffFetch(jupUrl, jupOptions, 5, "JUPITER"); 
         const jupJson = await jupRes.json();
+        
+        // Ensure we check the "data" object and the specific TOKEN_MINT key
         tokenPriceUsd = jupJson.data?.[TOKEN_MINT]?.price || 0;
         
         if (tokenPriceUsd > 0) {
-            debugLog("CACHE_PRICE", `Jupiter price successfully fetched: $${tokenPriceUsd.toFixed(10)}`);
+            debugLog("CACHE_PRICE", `Jupiter price successfully fetched for ${TOKEN_MINT}: $${tokenPriceUsd.toFixed(10)}`);
         } else {
-            debugLog("CACHE_PRICE", "Jupiter returned price 0 or invalid data.", true);
+            debugLog("CACHE_PRICE", `Jupiter price fetch failed. Price returned 0 or structure invalid. Raw response keys: ${Object.keys(jupJson.data || {})}`, true);
         }
 
     } catch (e) { 
@@ -275,7 +272,7 @@ setTimeout(fetchJupiterPrice, 30000);
 
 // 3. Schedule Recurring Updates (Ensures only one run per minute)
 setInterval(fetchAndCacheData, CACHE_DURATION_MS);
-setInterval(fetchJupiterPrice, CACHE_DURATION_MS); // Price runs every minute, roughly 30s after main
+setInterval(fetchJupiterPrice, CAIDADE_DURATION_MS); // Price runs every minute, roughly 30s after main
 
 // --- API ROUTES ---
 
@@ -301,13 +298,11 @@ app.get('/', (req, res) => {
 
 // Endpoint: Burn Stats - serves cached data
 app.get('/api/burn', checkCache, (req, res) => {
-    // Inject timestamp for the frontend status display
     res.json({ ...cache.burn, lastUpdated: cache.lastUpdated });
 });
 
 // Endpoint: Wallet Stats - serves cached data
 app.get('/api/wallet', checkCache, (req, res) => {
-    // Inject timestamp for the frontend status display
     res.json({ ...cache.wallet, lastUpdated: cache.lastUpdated });
 });
 
