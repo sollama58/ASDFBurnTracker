@@ -16,8 +16,8 @@ function debugLog(category, message, isError = false) {
 // --- CACHING VARIABLES ---
 let cache = { 
     burn: {}, 
-    wallet: { tokenPriceUsd: 0 }, 
-    forecast: { totalVolume: 0, totalFees: 0, totalWinnings: 0 }, 
+    wallet: { tokenPriceUsd: 0, solPriceUsd: 0 }, // Added solPriceUsd
+    forecast: { totalVolume: 0, totalFees: 0, totalWinnings: 0, totalLifetimeUsers: 0 }, // Added totalLifetimeUsers
     lastUpdated: 0 
 };
 const CACHE_DURATION_MS = 60000; // 1 minute
@@ -25,25 +25,25 @@ const CACHE_DURATION_MS = 60000; // 1 minute
 // --- CONFIGURATION & VALIDATION ---
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY; 
 const JUPITER_API_KEY = process.env.JUPITER_API_KEY || ""; 
-// NEW: URL for the ASDForecast Backend
+const HELIUS_CONNECTION_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
+// ASDForecast API URL is now fixed in the backend logic
 const ASDFORECAST_API_URL = "https://asdforecast.onrender.com"; 
 
 if (!HELIUS_API_KEY) {
     debugLog("INIT", "FATAL: HELIUS_API_KEY environment variable is not set.", true);
     process.exit(1); 
 }
-// Note: ASDFORECAST_API_URL is now hardcoded as requested, removing the check.
 
 const TOKEN_MINT = "9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump"; // ASDF Contract Address
 const TOKEN_TOTAL_SUPPLY = 1_000_000_000;
 const TRACKED_WALLET = "vcGYZbvDid6cRUkCCqcWpBxow73TLpmY6ipmDUtrTF8";
 const PURCHASE_SOURCE_ADDRESS = "DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb";
 
-const HELIUS_RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
+const HELIUS_RPC_URL = HELIUS_CONNECTION_URL;
 const HELIUS_ENHANCED_BASE = "https://api-mainnet.helius-rpc.com/v0";
 const COINGECKO_DEMO_KEY = process.env.COINGECKO_API_KEY || "CG-KsYLbF8hxVytbPTNyLXe7vWA"; 
 const COINGECKO_BASE = "https://api.coingecko.com/api/v3";
-const JUP_PRICE_URL = "https://lite-api.jup.ag/price/v3";
+// JUP_PRICE_URL is no longer used for fetching ASDF price
 
 // Middleware
 app.use(cors());
@@ -75,7 +75,59 @@ async function exponentialBackoffFetch(url, options = {}, maxRetries = 5, catego
     }
 }
 
-// --- LOGIC FUNCTIONS (Unchanged helper functions omitted for brevity) ---
+// --- NEW LOGIC: HELIUS ASSET PRICE FETCHING ---
+
+async function fetchHeliusTokenPrice(mint) {
+    try {
+        const url = `${HELIUS_ENHANCED_BASE}/token-price?api-key=${HELIUS_API_KEY}`;
+        const options = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mintAddresses: [mint] })
+        };
+        const res = await exponentialBackoffFetch(url, options, 5, "HELIUS_PRICE");
+        const json = await res.json();
+        
+        const price = json[mint]?.price || 0;
+
+        if (price > 0) {
+            debugLog("HELIUS_PRICE", `Token ${mint} price fetched: $${price.toFixed(10)}`);
+            return price;
+        }
+        throw new Error("Price not found or zero.");
+    } catch (e) {
+        debugLog("HELIUS_PRICE", `Failed to fetch price for ${mint}: ${e.message}`, true);
+        return 0;
+    }
+}
+
+async function fetchCurrentSolPrice() {
+    try {
+        const url = `${HELIUS_ENHANCED_BASE}/token-price?api-key=${HELIUS_API_KEY}`;
+        const options = {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mintAddresses: ['So11111111111111111111111111111111111111112'] }) // SOL WEN MINT
+        };
+        const res = await exponentialBackoffFetch(url, options, 5, "HELIUS_SOL_PRICE");
+        const json = await res.json();
+        
+        const price = json['So11111111111111111111111111111111111111112']?.price || 0;
+
+        if (price > 0) {
+            debugLog("HELIUS_SOL_PRICE", `Current SOL price fetched: $${price.toFixed(2)}`);
+            return price;
+        }
+        throw new Error("SOL price not found or zero.");
+    } catch (e) {
+        debugLog("HELIUS_SOL_PRICE", `Failed to fetch SOL price: ${e.message}`, true);
+        return 0;
+    }
+}
+
+
+// --- REST OF LOGIC FUNCTIONS (Helius/Solana dependent helpers remain) ---
+
 async function fetchCurrentTokenSupplyUi() {
     const body = { jsonrpc: "2.0", id: "burn-supply", method: "getTokenSupply", params: [TOKEN_MINT] };
     const res = await exponentialBackoffFetch(HELIUS_RPC_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, 5, "HELIUS_RPC");
@@ -120,7 +172,10 @@ function extractSolReceipts(transactions, wallet) {
     return { receipts, totalSol };
 }
 
+// NOTE: Coingecko logic is still needed for historical SOL price for fees, 
+// so we keep the helper but rely on the cache to provide current SOL price.
 async function fetchSolHistoricalPrices(fromSec, toSec) {
+    // ... (unchanged logic)
     const from = Math.max(0, fromSec - 3600); const to = toSec + 3600;
     const url = new URL(`${COINGECKO_BASE}/coins/solana/market_chart/range`);
     url.searchParams.set("vs_currency", "usd"); url.searchParams.set("from", String(from)); url.searchParams.set("to", String(to));
@@ -175,13 +230,12 @@ function computeTokenFlows(transactions, wallet, mint) {
     return { purchasedFromSource };
 }
 
+
 // --- CROSS-SERVICE FETCHING ---
 
 async function fetchASDForecastStats() {
-    // ASDFORECAST_API_URL is guaranteed to be set to the requested value
-    
     try {
-        // The ASDForecast state object contains platformStats: { totalVolume, totalFees, totalWinnings, ... }
+        // ASDForecast provides platformStats via /api/state
         const statsUrl = `${ASDFORECAST_API_URL}/api/state`; 
         debugLog("FORECAST_API", `Fetching stats from: ${statsUrl}`);
 
@@ -194,13 +248,14 @@ async function fetchASDForecastStats() {
             totalVolume: platformStats.totalVolume || 0,
             totalFees: platformStats.totalFees || 0,
             totalWinnings: platformStats.totalWinnings || 0,
+            totalLifetimeUsers: platformStats.totalLifetimeUsers || 0, // Extracting new field
         };
-        debugLog("FORECAST_API", `ASDForecast stats retrieved. Volume: ${stats.totalVolume.toFixed(2)}`);
+        debugLog("FORECAST_API", `ASDForecast stats retrieved. Users: ${stats.totalLifetimeUsers}`);
         return stats;
 
     } catch (error) {
         debugLog("FORECAST_API", `Failed to fetch ASDForecast stats: ${error.message}`, true);
-        return { totalVolume: 0, totalFees: 0, totalWinnings: 0 };
+        return { totalVolume: 0, totalFees: 0, totalWinnings: 0, totalLifetimeUsers: 0 };
     }
 }
 
@@ -213,7 +268,7 @@ async function fetchASDForecastStats() {
 async function fetchAndCacheData() {
     debugLog("CACHE_MAIN", "Starting data fetch (Heavy Lift)...");
     
-    let currentSupply, totalSol, lifetimeUsd, purchasedFromSource;
+    let currentSupply, totalSol, lifetimeUsd, purchasedFromSource, solPriceUsd;
 
     try {
         // --- 1. BURN DATA ---
@@ -242,21 +297,25 @@ async function fetchAndCacheData() {
         
         // --- 4. ASDFORECAST FEES (CROSS SERVICE) ---
         const forecastStats = await fetchASDForecastStats();
+        
+        // --- 5. CURRENT SOL PRICE (HELIUS) ---
+        solPriceUsd = await fetchCurrentSolPrice();
 
-        // --- 5. CACHE STORAGE ---
+        // --- 6. CACHE STORAGE ---
         const existingTokenPrice = cache.wallet.tokenPriceUsd || 0;
         
         cache.wallet = { 
             ctoFeesSol: totalSol, 
             ctoFeesUsd: lifetimeUsd, 
             purchasedFromSource, 
-            tokenPriceUsd: existingTokenPrice 
+            tokenPriceUsd: existingTokenPrice,
+            solPriceUsd: solPriceUsd
         };
         
         cache.forecast = forecastStats;
         
         cache.lastUpdated = Date.now();
-        debugLog("CACHE_MAIN", "Heavy lift data successfully cached.");
+        debugLog("CACHE_MAIN", `Heavy lift data successfully cached. SOL Price: $${solPriceUsd.toFixed(2)}`);
 
     } catch (error) {
         debugLog("CACHE_MAIN", `Failed to update cache (Heavy Lift): ${error.message}`, true);
@@ -267,34 +326,16 @@ async function fetchAndCacheData() {
 /**
  * Job 2: Fetches current ASDF price (The Staggered Lift).
  */
-async function fetchJupiterPrice() {
-    debugLog("CACHE_PRICE", "Starting Jupiter price fetch...");
+async function fetchTokenPriceStaggered() {
+    debugLog("CACHE_PRICE", "Starting ASDF token price fetch...");
     let tokenPriceUsd = 0;
     
-    let jupUrl = `${JUP_PRICE_URL}?ids=${TOKEN_MINT}`;
-    debugLog("CACHE_PRICE", `Requesting Jupiter URL: ${jupUrl}`);
-    
-    const jupOptions = JUPITER_API_KEY ? { headers: { 'Authorization': `Bearer ${JUPITER_API_KEY}` } } : {};
-
-    try {
-        const jupRes = await exponentialBackoffFetch(jupUrl, jupOptions, 5, "JUPITER"); 
-        const jupJson = await jupRes.json();
-        
-        const tokenData = jupJson?.[TOKEN_MINT];
-        tokenPriceUsd = tokenData?.usdPrice || 0;
-        
-        if (tokenPriceUsd > 0) {
-            debugLog("CACHE_PRICE", `Jupiter price successfully fetched for ${TOKEN_MINT}: $${tokenPriceUsd.toFixed(10)}`);
-        } else {
-            debugLog("CACHE_PRICE", `Jupiter price fetch failed. Price returned 0 or structure invalid.`, true);
-        }
-
-    } catch (e) { 
-        debugLog("CACHE_PRICE", `Failed to update Jupiter price: ${e.message}`, true);
-    }
+    // Fetch ASDF price using Helius's token price endpoint
+    tokenPriceUsd = await fetchHeliusTokenPrice(TOKEN_MINT);
     
     cache.wallet.tokenPriceUsd = tokenPriceUsd;
     cache.lastUpdated = Date.now();
+    debugLog("CACHE_PRICE", `ASDF Token price updated. Price: $${tokenPriceUsd.toFixed(10)}`);
 }
 
 // --- INITIALIZATION AND SCHEDULING ---
@@ -302,11 +343,11 @@ async function fetchJupiterPrice() {
 // 1. Initial Main Fetch
 fetchAndCacheData(); 
 // 2. Initial Price Fetch (Staggered 30 seconds after main job starts)
-setTimeout(fetchJupiterPrice, 30000); 
+setTimeout(fetchTokenPriceStaggered, 30000); 
 
 // 3. Schedule Recurring Updates (Ensures only one run per minute)
 setInterval(fetchAndCacheData, CACHE_DURATION_MS);
-setInterval(fetchJupiterPrice, CACHE_DURATION_MS);
+setInterval(fetchTokenPriceStaggered, CACHE_DURATION_MS);
 
 // --- API ROUTES ---
 
