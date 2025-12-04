@@ -1,22 +1,32 @@
 const express = require('express');
 const cors = require('cors');
-// Use require for node-fetch
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// --- UTILITY: DEBUG LOGGING ---
+function debugLog(category, message, isError = false) {
+    const timestamp = new Date().toISOString();
+    const logFunc = isError ? console.error : console.log;
+    logFunc(`[${timestamp}] [${category.toUpperCase()}] ${message}`);
+}
+
 // --- CACHING VARIABLES ---
-let cache = { burn: {}, wallet: {}, lastUpdated: 0 };
+let cache = { 
+    burn: {}, 
+    wallet: { tokenPriceUsd: 0 }, // Initialize tokenPriceUsd to 0 to ensure it exists
+    lastUpdated: 0 
+};
 const CACHE_DURATION_MS = 60000; // 1 minute
 
 // --- CONFIGURATION & VALIDATION ---
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY; 
+const JUPITER_API_KEY = process.env.JUPITER_API_KEY || ""; 
 
-// CRITICAL CHECK: Ensure the Helius API key is available
 if (!HELIUS_API_KEY) {
-    console.error("FATAL: HELIUS_API_KEY environment variable is not set.");
+    debugLog("INIT", "FATAL: HELIUS_API_KEY environment variable is not set.", true);
     process.exit(1); 
 }
 
@@ -35,12 +45,39 @@ const JUP_PRICE_URL = "https://lite-api.jup.ag/price/v3";
 app.use(cors());
 app.use(express.json());
 
+// --- UTILITY: EXPONENTIAL BACKOFF FOR API CALLS ---
+async function exponentialBackoffFetch(url, options = {}, maxRetries = 5, category = "API") {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+            const res = await fetch(url, options);
+            if (res.ok) return res;
+
+            if (res.status === 429 || res.status >= 500) {
+                // Rate limit or server error: retry with delay
+                const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
+                debugLog(category, `Attempt ${attempt + 1}: Received HTTP ${res.status}. Retrying in ${delay.toFixed(0)}ms...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                continue; 
+            }
+            // Non-retryable error (e.g., 400, 404)
+            throw new Error(`API failed with non-retryable status: ${res.status}`);
+
+        } catch (error) {
+            if (attempt === maxRetries - 1) {
+                throw new Error(`API failed after ${maxRetries} attempts: ${error.message}`);
+            }
+            const delay = Math.pow(2, attempt) * 500 + Math.random() * 500;
+            debugLog(category, `Attempt ${attempt + 1}: Network error (${error.message}). Retrying in ${delay.toFixed(0)}ms...`, true);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    }
+}
+
 // --- LOGIC FUNCTIONS (Unchanged from previous versions) ---
 
 async function fetchCurrentTokenSupplyUi() {
     const body = { jsonrpc: "2.0", id: "burn-supply", method: "getTokenSupply", params: [TOKEN_MINT] };
-    const res = await fetch(HELIUS_RPC_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!res.ok) throw new Error(`getTokenSupply failed: HTTP ${res.status}`);
+    const res = await exponentialBackoffFetch(HELIUS_RPC_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, 5, "HELIUS_RPC");
     const json = await res.json();
     const { uiAmount, uiAmountString } = json.result.value;
     return typeof uiAmount === "number" ? uiAmount : parseFloat(uiAmountString);
@@ -52,18 +89,22 @@ async function fetchAllEnhancedTransactions(address, maxPages = 20) {
         const url = new URL(`${HELIUS_ENHANCED_BASE}/addresses/${address}/transactions`);
         url.searchParams.set("api-key", HELIUS_API_KEY);
         if (before) url.searchParams.set("before", before);
-        const res = await fetch(url.toString());
-        if (!res.ok) { console.warn(`Helius fetch failed on page ${page}: HTTP ${res.status}`); break; } 
+        
+        const res = await exponentialBackoffFetch(url.toString(), {}, 5, "HELIUS_TXS");
         const batch = await res.json();
+        
         if (!Array.isArray(batch) || batch.length === 0) break;
         all.push(...batch);
+
         const last = batch[batch.length - 1];
-        if (!last || !last.signature) break;
+        if (!last || !last.signature || batch.length < 90) break;
         before = last.signature;
-        if (batch.length < 90) break;
     }
     return all;
 }
+
+// NOTE: All other helper functions (extractSolReceipts, fetchSolHistoricalPrices, 
+// computeLifetimeUsd, computeTokenFlows) remain unchanged. 
 
 function extractSolReceipts(transactions, wallet) {
     const receipts = []; let totalLamports = 0n;
@@ -87,10 +128,14 @@ async function fetchSolHistoricalPrices(fromSec, toSec) {
     url.searchParams.set("vs_currency", "usd"); url.searchParams.set("from", String(from)); url.searchParams.set("to", String(to));
     url.searchParams.set("x_cg_demo_api_key", COINGECKO_DEMO_KEY);
 
-    const res = await fetch(url.toString());
-    if (!res.ok) { console.warn(`CoinGecko fetch failed: HTTP ${res.status}`); return []; }
-    const json = await res.json();
-    return json.prices.map(([tMs, price]) => ({ tMs: Number(tMs), priceUsd: Number(price) }));
+    try {
+        const res = await exponentialBackoffFetch(url.toString(), {}, 5, "COINGECKO");
+        const json = await res.json();
+        return json.prices.map(([tMs, price]) => ({ tMs: Number(tMs), priceUsd: Number(price) }));
+    } catch(e) {
+        debugLog("COINGECKO", `Failed to fetch historical SOL prices: ${e.message}`, true);
+        return [];
+    }
 }
 
 function computeLifetimeUsd(receipts, priceSeries) {
@@ -132,12 +177,16 @@ function computeTokenFlows(transactions, wallet, mint) {
     return { purchasedFromSource };
 }
 
-// --- NEW: CACHING & FETCHING JOB ---
 
+// --- ASYNC CACHING JOBS ---
+
+/**
+ * Job 1: Fetches Burn Data, Wallet Data, and SOL Historical Prices (The Heavy Lift).
+ */
 async function fetchAndCacheData() {
-    console.log(`[Cache] Starting data fetch: ${new Date().toISOString()}`);
+    debugLog("CACHE_MAIN", "Starting data fetch (Heavy Lift)...");
     
-    let currentSupply, totalSol, lifetimeUsd, purchasedFromSource, tokenPriceUsd;
+    let currentSupply, totalSol, lifetimeUsd, purchasedFromSource;
 
     try {
         // --- 1. BURN DATA ---
@@ -146,16 +195,20 @@ async function fetchAndCacheData() {
         const burnedPercent = (burned / TOKEN_TOTAL_SUPPLY) * 100;
         
         cache.burn = { burnedAmount: burned, currentSupply, burnedPercent };
+        debugLog("CACHE_MAIN", `Burn data calculated. Burned: ${burnedPercent.toFixed(2)}%`);
 
-        // --- 2. WALLET DATA (HEAVY LIFT) ---
+        // --- 2. WALLET DATA (HELIUS TXS) ---
         const txs = await fetchAllEnhancedTransactions(TRACKED_WALLET);
         const { receipts, totalSol: calculatedSol } = extractSolReceipts(txs, TRACKED_WALLET);
         totalSol = calculatedSol;
+        debugLog("CACHE_MAIN", `Found ${txs.length} transactions and ${receipts.length} SOL receipts.`);
 
+        // --- 3. SOL HISTORICAL PRICES (COINGECKO) ---
         if (receipts.length > 0) {
             const timestamps = receipts.map(r => r.timestamp);
             const prices = await fetchSolHistoricalPrices(Math.min(...timestamps), Math.max(...timestamps));
             lifetimeUsd = computeLifetimeUsd(receipts, prices);
+            debugLog("CACHE_MAIN", `SOL lifetime USD calculated: $${lifetimeUsd.toFixed(2)}.`);
         } else {
             lifetimeUsd = 0;
         }
@@ -163,50 +216,73 @@ async function fetchAndCacheData() {
         const { purchasedFromSource: calculatedPurchased } = computeTokenFlows(txs, TRACKED_WALLET, TOKEN_MINT);
         purchasedFromSource = calculatedPurchased;
 
-        // --- 3. TOKEN PRICE (FIXING USD VALUE) ---
-        // This is where the price for ASDF is fetched (used for "Sacrificed" USD value)
-        try {
-            const jupRes = await fetch(`${JUP_PRICE_URL}?ids=${TOKEN_MINT}`);
-            if (jupRes.ok) {
-                const jupJson = await jupRes.json();
-                tokenPriceUsd = jupJson.data?.[TOKEN_MINT]?.price || 0;
-            } else {
-                console.warn(`Jupiter fetch failed (HTTP ${jupRes.status}). Price set to 0.`);
-                tokenPriceUsd = 0;
-            }
-        } catch (e) { 
-            console.error("Jupiter fetch failed:", e.message); 
-            tokenPriceUsd = 0;
-        }
-
-        // --- 4. CACHE STORAGE ---
+        // --- 4. CACHE STORAGE (Initial) ---
+        // Preserve existing tokenPriceUsd if it exists, otherwise use 0
+        const existingTokenPrice = cache.wallet.tokenPriceUsd || 0;
+        
         cache.wallet = { 
             ctoFeesSol: totalSol, 
             ctoFeesUsd: lifetimeUsd, 
             purchasedFromSource, 
-            tokenPriceUsd 
+            tokenPriceUsd: existingTokenPrice 
         };
         cache.lastUpdated = Date.now();
-        console.log(`[Cache] Data fetch complete. Next update in ${CACHE_DURATION_MS / 1000}s.`);
+        debugLog("CACHE_MAIN", "Heavy lift data successfully cached.");
 
     } catch (error) {
-        console.error("[Cache] Failed to update cache:", error.message);
-        // If the fetch fails, keep the old cache data, but update timestamp to allow re-run
+        debugLog("CACHE_MAIN", `Failed to update cache (Heavy Lift): ${error.message}`, true);
         cache.lastUpdated = Date.now(); 
     }
 }
 
-// Start the initial fetch immediately
+/**
+ * Job 2: Fetches current ASDF price (The Staggered Lift).
+ */
+async function fetchJupiterPrice() {
+    debugLog("CACHE_PRICE", "Starting Jupiter price fetch...");
+    let tokenPriceUsd = 0;
+    
+    let jupUrl = `${JUP_PRICE_URL}?ids=${TOKEN_MINT}`;
+    // Headers are needed if JUPITER_API_KEY were required by the endpoint
+    const jupOptions = JUPITER_API_KEY ? { headers: { 'Authorization': `Bearer ${JUPITER_API_KEY}` } } : {};
+
+    try {
+        const jupRes = await exponentialBackoffFetch(jupUrl, jupOptions, 5, "JUPITER"); 
+        const jupJson = await jupRes.json();
+        tokenPriceUsd = jupJson.data?.[TOKEN_MINT]?.price || 0;
+        
+        if (tokenPriceUsd > 0) {
+            debugLog("CACHE_PRICE", `Jupiter price successfully fetched: $${tokenPriceUsd.toFixed(10)}`);
+        } else {
+            debugLog("CACHE_PRICE", "Jupiter returned price 0 or invalid data.", true);
+        }
+
+    } catch (e) { 
+        debugLog("CACHE_PRICE", `Failed to update Jupiter price: ${e.message}`, true);
+    }
+    
+    // Update cache with new price and set the last update time again
+    cache.wallet.tokenPriceUsd = tokenPriceUsd;
+    cache.lastUpdated = Date.now();
+}
+
+// --- INITIALIZATION AND SCHEDULING ---
+
+// 1. Initial Main Fetch
 fetchAndCacheData(); 
-// Schedule recurring updates every minute
+// 2. Initial Price Fetch (Staggered 30 seconds after main job starts)
+setTimeout(fetchJupiterPrice, 30000); 
+
+// 3. Schedule Recurring Updates (Ensures only one run per minute)
 setInterval(fetchAndCacheData, CACHE_DURATION_MS);
+setInterval(fetchJupiterPrice, CACHE_DURATION_MS); // Price runs every minute, roughly 30s after main
 
 // --- API ROUTES ---
 
 // Middleware to check if cache is ready
 function checkCache(req, res, next) {
     if (cache.lastUpdated === 0) {
-        // If initial fetch hasn't completed yet
+        debugLog("API_STATUS", "Serving 503: Cache initializing.");
         return res.status(503).json({ error: "Service unavailable, initializing data cache." });
     }
     next();
@@ -218,7 +294,8 @@ app.get('/', (req, res) => {
     res.send({ 
         status: 'ok', 
         message: 'ASDF Tracker Backend is running and serving cached data.',
-        cacheAge: `${(cacheAge / 1000).toFixed(0)} seconds old`
+        cacheAge: `${(cacheAge / 1000).toFixed(0)} seconds old`,
+        lastPrice: cache.wallet.tokenPriceUsd
     });
 });
 
@@ -235,5 +312,5 @@ app.get('/api/wallet', checkCache, (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    debugLog("INIT", `Server running on port ${PORT}`);
 });
