@@ -175,28 +175,22 @@ function computeTokenFlows(transactions, wallet, mint) {
 
 // --- ASYNC CACHING JOBS ---
 
-/**
- * Job 1: Fetches Burn Data, Wallet Data, and SOL Historical Prices (The Heavy Lift).
- */
 async function fetchAndCacheData() {
     debugLog("CACHE_MAIN", "Starting data fetch (Heavy Lift)...");
     
     let currentSupply, totalSol, lifetimeUsd, purchasedFromSource;
 
     try {
-        // --- 1. BURN DATA ---
         currentSupply = await fetchCurrentTokenSupplyUi();
         const burned = TOKEN_TOTAL_SUPPLY - currentSupply;
         const burnedPercent = (burned / TOKEN_TOTAL_SUPPLY) * 100;
         
         cache.burn = { burnedAmount: burned, currentSupply, burnedPercent };
 
-        // --- 2. WALLET DATA (HELIUS TXS) ---
         const txs = await fetchAllEnhancedTransactions(TRACKED_WALLET);
         const { receipts, totalSol: calculatedSol } = extractSolReceipts(txs, TRACKED_WALLET);
         totalSol = calculatedSol;
 
-        // --- 3. SOL HISTORICAL PRICES (COINGECKO) ---
         if (receipts.length > 0) {
             const timestamps = receipts.map(r => r.timestamp);
             const prices = await fetchSolHistoricalPrices(Math.min(...timestamps), Math.max(...timestamps));
@@ -208,7 +202,6 @@ async function fetchAndCacheData() {
         const { purchasedFromSource: calculatedPurchased } = computeTokenFlows(txs, TRACKED_WALLET, TOKEN_MINT);
         purchasedFromSource = calculatedPurchased;
 
-        // --- 4. CACHE STORAGE (Initial) ---
         const existingTokenPrice = cache.wallet.tokenPriceUsd || 0;
         
         cache.wallet = { 
@@ -233,7 +226,6 @@ async function fetchJupiterPrice() {
     debugLog("CACHE_PRICE", "Starting Jupiter price fetch...");
     let tokenPriceUsd = 0;
     
-    // Ensure the correct TOKEN_MINT contract address is used in the URL
     let jupUrl = `${JUP_PRICE_URL}?ids=${TOKEN_MINT}`;
     debugLog("CACHE_PRICE", `Requesting Jupiter URL: ${jupUrl}`);
     
@@ -243,13 +235,16 @@ async function fetchJupiterPrice() {
         const jupRes = await exponentialBackoffFetch(jupUrl, jupOptions, 5, "JUPITER"); 
         const jupJson = await jupRes.json();
         
-        // Ensure we check the "data" object and the specific TOKEN_MINT key
-        tokenPriceUsd = jupJson.data?.[TOKEN_MINT]?.price || 0;
+        // --- FIX: Correctly extract usdPrice from the nested object ---
+        const tokenData = jupJson?.[TOKEN_MINT];
+        tokenPriceUsd = tokenData?.usdPrice || 0;
+        // --- END FIX ---
         
         if (tokenPriceUsd > 0) {
             debugLog("CACHE_PRICE", `Jupiter price successfully fetched for ${TOKEN_MINT}: $${tokenPriceUsd.toFixed(10)}`);
         } else {
-            debugLog("CACHE_PRICE", `Jupiter price fetch failed. Price returned 0 or structure invalid. Raw response keys: ${Object.keys(jupJson.data || {})}`, true);
+            // Log the keys to help debug if the structure changes again
+            debugLog("CACHE_PRICE", `Jupiter price fetch failed. Price returned 0 or structure invalid. Raw response keys: ${Object.keys(jupJson || {})}`, true);
         }
 
     } catch (e) { 
@@ -270,7 +265,7 @@ setTimeout(fetchJupiterPrice, 30000);
 
 // 3. Schedule Recurring Updates (Ensures only one run per minute)
 setInterval(fetchAndCacheData, CACHE_DURATION_MS);
-setInterval(fetchJupiterPrice, CACHE_DURATION_MS); // CORRECTED: CACHING_DURATION_MS used here
+setInterval(fetchJupiterPrice, CACHE_DURATION_MS);
 
 // --- API ROUTES ---
 
