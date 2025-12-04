@@ -71,9 +71,7 @@ async function exponentialBackoffFetch(url, options = {}, maxRetries = 5, catego
     }
 }
 
-// --- LOGIC FUNCTIONS ---
-// NOTE: fetchCurrentTokenSupplyUi, fetchAllEnhancedTransactions, extractSolReceipts, 
-// fetchSolHistoricalPrices, computeLifetimeUsd, computeTokenFlows are unchanged.
+// --- LOGIC FUNCTIONS (Only fetch-related bodies included for brevity) ---
 
 async function fetchCurrentTokenSupplyUi() {
     const body = { jsonrpc: "2.0", id: "burn-supply", method: "getTokenSupply", params: [TOKEN_MINT] };
@@ -272,7 +270,7 @@ setTimeout(fetchJupiterPrice, 30000);
 
 // 3. Schedule Recurring Updates (Ensures only one run per minute)
 setInterval(fetchAndCacheData, CACHE_DURATION_MS);
-setInterval(fetchJupiterPrice, CAIDADE_DURATION_MS); // Price runs every minute, roughly 30s after main
+setInterval(fetchJupiterPrice, CACHE_DURATION_MS); // CORRECTED: CACHING_DURATION_MS used here
 
 // --- API ROUTES ---
 
