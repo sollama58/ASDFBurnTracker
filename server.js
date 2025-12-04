@@ -17,6 +17,7 @@ function debugLog(category, message, isError = false) {
 let cache = { 
     burn: {}, 
     wallet: { tokenPriceUsd: 0 }, 
+    forecast: { totalVolume: 0, totalFees: 0, totalWinnings: 0 }, 
     lastUpdated: 0 
 };
 const CACHE_DURATION_MS = 60000; // 1 minute
@@ -24,11 +25,14 @@ const CACHE_DURATION_MS = 60000; // 1 minute
 // --- CONFIGURATION & VALIDATION ---
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY; 
 const JUPITER_API_KEY = process.env.JUPITER_API_KEY || ""; 
+// NEW: URL for the ASDForecast Backend
+const ASDFORECAST_API_URL = "https://asdforecast.onrender.com"; 
 
 if (!HELIUS_API_KEY) {
     debugLog("INIT", "FATAL: HELIUS_API_KEY environment variable is not set.", true);
     process.exit(1); 
 }
+// Note: ASDFORECAST_API_URL is now hardcoded as requested, removing the check.
 
 const TOKEN_MINT = "9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump"; // ASDF Contract Address
 const TOKEN_TOTAL_SUPPLY = 1_000_000_000;
@@ -71,8 +75,7 @@ async function exponentialBackoffFetch(url, options = {}, maxRetries = 5, catego
     }
 }
 
-// --- LOGIC FUNCTIONS (Only fetch-related bodies included for brevity) ---
-
+// --- LOGIC FUNCTIONS (Unchanged helper functions omitted for brevity) ---
 async function fetchCurrentTokenSupplyUi() {
     const body = { jsonrpc: "2.0", id: "burn-supply", method: "getTokenSupply", params: [TOKEN_MINT] };
     const res = await exponentialBackoffFetch(HELIUS_RPC_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, 5, "HELIUS_RPC");
@@ -172,25 +175,60 @@ function computeTokenFlows(transactions, wallet, mint) {
     return { purchasedFromSource };
 }
 
+// --- CROSS-SERVICE FETCHING ---
+
+async function fetchASDForecastStats() {
+    // ASDFORECAST_API_URL is guaranteed to be set to the requested value
+    
+    try {
+        // The ASDForecast state object contains platformStats: { totalVolume, totalFees, totalWinnings, ... }
+        const statsUrl = `${ASDFORECAST_API_URL}/api/state`; 
+        debugLog("FORECAST_API", `Fetching stats from: ${statsUrl}`);
+
+        const res = await exponentialBackoffFetch(statsUrl, {}, 5, "FORECAST_API");
+        const json = await res.json();
+        
+        const platformStats = json.platformStats || {};
+
+        const stats = {
+            totalVolume: platformStats.totalVolume || 0,
+            totalFees: platformStats.totalFees || 0,
+            totalWinnings: platformStats.totalWinnings || 0,
+        };
+        debugLog("FORECAST_API", `ASDForecast stats retrieved. Volume: ${stats.totalVolume.toFixed(2)}`);
+        return stats;
+
+    } catch (error) {
+        debugLog("FORECAST_API", `Failed to fetch ASDForecast stats: ${error.message}`, true);
+        return { totalVolume: 0, totalFees: 0, totalWinnings: 0 };
+    }
+}
+
 
 // --- ASYNC CACHING JOBS ---
 
+/**
+ * Job 1: Fetches Burn Data, Wallet Data, and SOL Historical Prices (The Heavy Lift).
+ */
 async function fetchAndCacheData() {
     debugLog("CACHE_MAIN", "Starting data fetch (Heavy Lift)...");
     
     let currentSupply, totalSol, lifetimeUsd, purchasedFromSource;
 
     try {
+        // --- 1. BURN DATA ---
         currentSupply = await fetchCurrentTokenSupplyUi();
         const burned = TOKEN_TOTAL_SUPPLY - currentSupply;
         const burnedPercent = (burned / TOKEN_TOTAL_SUPPLY) * 100;
         
         cache.burn = { burnedAmount: burned, currentSupply, burnedPercent };
 
+        // --- 2. WALLET DATA (HELIUS TXS) ---
         const txs = await fetchAllEnhancedTransactions(TRACKED_WALLET);
         const { receipts, totalSol: calculatedSol } = extractSolReceipts(txs, TRACKED_WALLET);
         totalSol = calculatedSol;
 
+        // --- 3. SOL HISTORICAL PRICES (COINGECKO) ---
         if (receipts.length > 0) {
             const timestamps = receipts.map(r => r.timestamp);
             const prices = await fetchSolHistoricalPrices(Math.min(...timestamps), Math.max(...timestamps));
@@ -201,7 +239,11 @@ async function fetchAndCacheData() {
 
         const { purchasedFromSource: calculatedPurchased } = computeTokenFlows(txs, TRACKED_WALLET, TOKEN_MINT);
         purchasedFromSource = calculatedPurchased;
+        
+        // --- 4. ASDFORECAST FEES (CROSS SERVICE) ---
+        const forecastStats = await fetchASDForecastStats();
 
+        // --- 5. CACHE STORAGE ---
         const existingTokenPrice = cache.wallet.tokenPriceUsd || 0;
         
         cache.wallet = { 
@@ -210,6 +252,9 @@ async function fetchAndCacheData() {
             purchasedFromSource, 
             tokenPriceUsd: existingTokenPrice 
         };
+        
+        cache.forecast = forecastStats;
+        
         cache.lastUpdated = Date.now();
         debugLog("CACHE_MAIN", "Heavy lift data successfully cached.");
 
@@ -235,23 +280,19 @@ async function fetchJupiterPrice() {
         const jupRes = await exponentialBackoffFetch(jupUrl, jupOptions, 5, "JUPITER"); 
         const jupJson = await jupRes.json();
         
-        // --- FIX: Correctly extract usdPrice from the nested object ---
         const tokenData = jupJson?.[TOKEN_MINT];
         tokenPriceUsd = tokenData?.usdPrice || 0;
-        // --- END FIX ---
         
         if (tokenPriceUsd > 0) {
             debugLog("CACHE_PRICE", `Jupiter price successfully fetched for ${TOKEN_MINT}: $${tokenPriceUsd.toFixed(10)}`);
         } else {
-            // Log the keys to help debug if the structure changes again
-            debugLog("CACHE_PRICE", `Jupiter price fetch failed. Price returned 0 or structure invalid. Raw response keys: ${Object.keys(jupJson || {})}`, true);
+            debugLog("CACHE_PRICE", `Jupiter price fetch failed. Price returned 0 or structure invalid.`, true);
         }
 
     } catch (e) { 
         debugLog("CACHE_PRICE", `Failed to update Jupiter price: ${e.message}`, true);
     }
     
-    // Update cache with new price and set the last update time again
     cache.wallet.tokenPriceUsd = tokenPriceUsd;
     cache.lastUpdated = Date.now();
 }
@@ -291,7 +332,8 @@ app.get('/', (req, res) => {
 
 // Endpoint: Burn Stats - serves cached data
 app.get('/api/burn', checkCache, (req, res) => {
-    res.json({ ...cache.burn, lastUpdated: cache.lastUpdated });
+    // Merge burn and forecast stats before sending
+    res.json({ ...cache.burn, ...cache.forecast, lastUpdated: cache.lastUpdated });
 });
 
 // Endpoint: Wallet Stats - serves cached data
