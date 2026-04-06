@@ -26,20 +26,18 @@ const HISTORICAL_SOL_PRICE_FILE = path.join(DATA_DIR, 'historical_sol_prices.jso
 const HISTORICAL_CACHE_DURATION_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 // --- CACHING VARIABLES ---
-let cache = { 
-    burn: {}, 
-    wallet: { tokenPriceUsd: 0, solPriceUsd: 0 }, 
-    forecast: { totalVolume: 0, totalFees: 0, totalWinnings: 0, totalLifetimeUsers: 0 }, 
-    lastUpdated: 0 
+let cache = {
+    burn: {},
+    wallet: { tokenPriceUsd: 0, solPriceUsd: 0 },
+    lastUpdated: 0
 };
-const FAST_CACHE_MS = 60000; // 1 minute: Burn/Wallet/Forecast Stats
+const FAST_CACHE_MS = 60000; // 1 minute: Burn/Wallet Stats
 const SLOW_CACHE_MS = 10 * 60000; // 10 minutes: Price Updates (SOL & ASDF)
 let cacheCycleCount = 0; // Tracks cycles for the 10-minute check
 
 // --- CONFIGURATION & VALIDATION ---
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY; 
-const JUPITER_API_KEY = process.env.JUPITER_API_KEY || ""; 
-const ASDFORECAST_API_URL = "https://asdforecast.onrender.com"; 
+const JUPITER_API_KEY = process.env.JUPITER_API_KEY || "";
 
 if (!HELIUS_API_KEY) {
     debugLog("INIT", "FATAL: HELIUS_API_KEY environment variable is not set.", true);
@@ -85,6 +83,7 @@ async function exponentialBackoffFetch(url, options = {}, maxRetries = 5, catego
             await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
+    throw new Error(`${category} failed after ${maxRetries} attempts.`);
 }
 
 // --- PRICE FETCHING LOGIC ---
@@ -251,31 +250,6 @@ function computeTokenFlows(transactions, wallet, mint) {
     return { purchasedFromSource };
 }
 
-async function fetchASDForecastStats() {
-    try {
-        const statsUrl = `${ASDFORECAST_API_URL}/api/state`; 
-        debugLog("FORECAST_API", `Fetching stats from: ${statsUrl}`);
-
-        const res = await exponentialBackoffFetch(statsUrl, {}, 5, "FORECAST_API");
-        const json = await res.json();
-        
-        const platformStats = json.platformStats || {};
-
-        const stats = {
-            totalVolume: platformStats.totalVolume || 0,
-            totalFees: platformStats.totalFees || 0,
-            totalWinnings: platformStats.totalWinnings || 0,
-            totalLifetimeUsers: platformStats.totalLifetimeUsers || 0,
-        };
-        debugLog("FORECAST_API", `ASDForecast stats retrieved. Users: ${stats.totalLifetimeUsers}`);
-        return stats;
-
-    } catch (error) {
-        debugLog("FORECAST_API", `Failed to fetch ASDForecast stats: ${error.message}`, true);
-        return { totalVolume: 0, totalFees: 0, totalWinnings: 0, totalLifetimeUsers: 0 };
-    }
-}
-
 
 // --- ASYNC CACHING JOBS ---
 
@@ -310,10 +284,7 @@ async function fetchAndCacheData() {
         const { purchasedFromSource: calculatedPurchased } = computeTokenFlows(txs, TRACKED_WALLET, TOKEN_MINT);
         purchasedFromSource = calculatedPurchased;
         
-        // --- 3. ASDFORECAST FEES (CROSS SERVICE) ---
-        const forecastStats = await fetchASDForecastStats();
-        
-        // --- 4. CACHE STORAGE ---
+        // --- 3. CACHE STORAGE ---
         cache.wallet = { 
             ctoFeesSol: totalSol, 
             ctoFeesUsd: lifetimeUsd, 
@@ -322,7 +293,6 @@ async function fetchAndCacheData() {
             solPriceUsd: cache.wallet.solPriceUsd // Keep existing slow cache price
         };
         
-        cache.forecast = forecastStats;
         cache.lastUpdated = Date.now();
         debugLog("CACHE_MAIN", "Heavy lift data successfully cached.");
 
@@ -405,7 +375,7 @@ app.get('/', (req, res) => {
 
 // Endpoint: Burn Stats - serves cached data
 app.get('/api/burn', checkCache, (req, res) => {
-    res.json({ ...cache.burn, ...cache.forecast, lastUpdated: cache.lastUpdated });
+    res.json({ ...cache.burn, lastUpdated: cache.lastUpdated });
 });
 
 // Endpoint: Wallet Stats - serves cached data

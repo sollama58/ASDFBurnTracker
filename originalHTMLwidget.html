@@ -2,17 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ASDFASDFA Burn & Cultist Donations</title>
   <style>
     :root {
-      --bg: #101010;
-      --panel-bg: #181818;
+      --bg: #0a0a0a;
+      --panel-bg: #141414;
       --accent: #ffd700;
       --accent-soft: #ffe870;
-      --muted: #aaaaaa;
+      --muted: #888888;
+      --muted-light: #aaaaaa;
       --danger: #ff5c33;
-      --border: #303030;
+      --border: #1e1e1e;
+      --border-hover: #333333;
+      --card-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.025), rgba(0, 0, 0, 0.5));
+      --glow-orange: rgba(255, 120, 0, 0.15);
+      --glow-gold: rgba(255, 215, 0, 0.08);
     }
+
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -21,24 +29,76 @@
       color: var(--accent);
       word-break: normal;
       overflow-wrap: break-word;
+      -webkit-font-smoothing: antialiased;
     }
 
     .asdf-widget {
       width: 100%;
       max-width: 1100px;
-      margin: 1.5rem auto;
+      margin: 0 auto;
       padding: 1.5rem;
-      background: radial-gradient(circle at top, #222 0, #101010 55%);
-      border-radius: 18px;
-      box-shadow: 0 0 40px rgba(0, 0, 0, 0.8);
-      box-sizing: border-box;
     }
 
+    /* Header */
+    .widget-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+      padding: 0 0.25rem;
+    }
+
+    .widget-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    .widget-title span {
+      color: var(--muted-light);
+      font-weight: 400;
+      font-size: 0.85rem;
+      margin-left: 0.5rem;
+    }
+
+    .price-ticker {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      font-size: 0.78rem;
+      font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+      color: var(--muted-light);
+    }
+
+    .price-ticker .price-label {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 0.68rem;
+      margin-right: 0.25rem;
+    }
+
+    .price-ticker .price-value {
+      color: var(--accent-soft);
+      font-weight: 600;
+    }
+
+    @media (max-width: 600px) {
+      .widget-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+      }
+    }
+
+    /* Main grid */
     .asdf-widget-grid {
       display: grid;
       grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-      gap: 1.75rem;
-      align-items: flex-start;
+      gap: 1.25rem;
+      align-items: stretch;
     }
 
     @media (max-width: 900px) {
@@ -48,8 +108,8 @@
     }
 
     h2 {
-      margin: 0 0 0.75rem;
-      font-size: 1.3rem;
+      margin: 0 0 0.6rem;
+      font-size: 1.2rem;
       letter-spacing: 0.04em;
       text-transform: uppercase;
       color: var(--accent-soft);
@@ -57,30 +117,37 @@
 
     h3 {
       margin: 0 0 0.5rem;
-      font-size: 1.05rem;
+      font-size: 0.95rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: var(--accent-soft);
     }
 
     .section-card {
-      background: linear-gradient(145deg, rgba(255, 255, 255, 0.03), rgba(0, 0, 0, 0.6));
-      border-radius: 14px;
+      background: var(--card-bg);
+      border-radius: 16px;
       padding: 1.25rem;
       border: 1px solid var(--border);
-      box-sizing: border-box;
+      transition: border-color 0.3s ease;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .section-card:hover {
+      border-color: var(--border-hover);
     }
 
     .section-subtitle {
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       text-transform: uppercase;
-      letter-spacing: 0.12em;
+      letter-spacing: 0.14em;
       color: var(--muted);
-      margin-bottom: 0.4rem;
+      margin-bottom: 0.25rem;
     }
 
     .label {
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: var(--muted);
@@ -91,12 +158,20 @@
     }
 
     .mono {
-      font-family: "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
-        monospace;
+      font-family: "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    /* Loading pulse */
+    .loading-pulse {
+      animation: pulse 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
     }
 
     /* Burn progress bar */
-
     .burn-bar-wrapper {
       margin-top: 0.8rem;
     }
@@ -104,11 +179,11 @@
     .burn-bar-bg {
       position: relative;
       width: 100%;
-      height: 34px;
+      height: 30px;
       border-radius: 999px;
-      background: linear-gradient(90deg, #1b1b1b, #242424);
+      background: linear-gradient(90deg, #131313, #1a1a1a);
       overflow: hidden;
-      box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.9);
+      box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.8);
     }
 
     .burn-bar-fill {
@@ -117,9 +192,10 @@
       top: 0;
       bottom: 0;
       width: 0%;
+      border-radius: 999px;
       background: linear-gradient(90deg, #ffcc33, #ff9c33, #ff5c33, #ff2e2e);
-      box-shadow: 0 0 24px rgba(255, 120, 0, 0.7);
-      transition: width 0.9s cubic-bezier(0.23, 1, 0.32, 1);
+      box-shadow: 0 0 20px rgba(255, 120, 0, 0.5);
+      transition: width 1.2s cubic-bezier(0.23, 1, 0.32, 1);
     }
 
     .burn-wall {
@@ -130,21 +206,21 @@
     }
 
     .burn-wall::before {
-      content: "🔥🔥🔥";
+      content: "\uD83D\uDD25\uD83D\uDD25\uD83D\uDD25";
       position: absolute;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -55%);
-      font-size: 0.9rem;
+      font-size: 0.8rem;
       text-shadow: 0 0 6px rgba(255, 120, 0, 1);
-      opacity: 0.8;
+      opacity: 0.6;
     }
 
     .burn-current-flame {
       position: absolute;
       top: 50%;
       transform: translate(-50%, -50%);
-      font-size: 1.4rem;
+      font-size: 1.3rem;
       text-shadow: 0 0 10px rgba(255, 160, 0, 0.9);
       animation: burn-flicker 0.6s infinite alternate ease-in-out;
       pointer-events: none;
@@ -164,8 +240,8 @@
     .burn-scale {
       display: flex;
       justify-content: space-between;
-      margin-top: 0.35rem;
-      font-size: 0.72rem;
+      margin-top: 0.3rem;
+      font-size: 0.68rem;
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.08em;
@@ -175,18 +251,20 @@
       display: flex;
       flex-direction: column;
       align-items: flex-start;
-      gap: 0.25rem;
-      margin-top: 0.4rem;
+      gap: 0.3rem;
+      margin-top: 0.5rem;
       font-size: 0.8rem;
     }
 
     .burn-stats span {
       white-space: normal;
+      line-height: 1.4;
     }
 
     .burn-percent-text {
       color: var(--accent-soft);
-      font-weight: 600;
+      font-weight: 700;
+      font-size: 0.95rem;
     }
 
     .burn-cap {
@@ -195,21 +273,56 @@
     }
 
     .status-line {
-      margin-top: 0.4rem;
-      font-size: 0.74rem;
+      margin-top: auto;
+      padding-top: 0.6rem;
+      font-size: 0.7rem;
       color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
     }
 
     .status-line.error {
       color: #ff7a7a;
     }
 
+    .status-line.success {
+      color: #5cb85c;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .status-line.error .status-dot {
+      background: #ff7a7a;
+    }
+
+    .status-line.success .status-dot {
+      background: #5cb85c;
+      box-shadow: 0 0 6px rgba(92, 184, 92, 0.5);
+    }
+
     /* Wallet and donations */
+    .wallet-address {
+      font-size: 0.72rem;
+      color: var(--muted);
+      word-break: break-all;
+      padding: 0.4rem 0.6rem;
+      background: rgba(255, 255, 255, 0.02);
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      margin-top: 0.15rem;
+    }
 
     .wallet-main-stats {
       display: grid;
       grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-      gap: 0.75rem;
+      gap: 0.6rem;
       margin-top: 0.75rem;
     }
 
@@ -220,37 +333,42 @@
     }
 
     .stat-card {
-      background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.06), transparent 60%);
+      background: rgba(255, 255, 255, 0.02);
       border-radius: 12px;
-      padding: 0.75rem 0.85rem;
+      padding: 0.7rem 0.8rem;
       border: 1px solid var(--border);
-      box-sizing: border-box;
+      transition: border-color 0.3s ease, background 0.3s ease;
+    }
+
+    .stat-card:hover {
+      border-color: var(--border-hover);
+      background: rgba(255, 255, 255, 0.035);
     }
 
     .stat-title {
-      font-size: 0.8rem;
+      font-size: 0.72rem;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.1em;
       color: var(--muted);
       margin-bottom: 0.2rem;
     }
 
     .stat-value-main {
-      font-size: 1.15rem;
+      font-size: 1.1rem;
       font-weight: 700;
       margin-bottom: 0.1rem;
     }
 
     .stat-value-sub {
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       color: var(--accent-soft);
     }
 
     .cultist-grid {
       display: grid;
       grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-      gap: 0.75rem;
-      margin-top: 0.75rem;
+      gap: 0.6rem;
+      margin-top: 0.6rem;
     }
 
     @media (max-width: 650px) {
@@ -260,38 +378,80 @@
     }
 
     .cultist-card {
-      background: linear-gradient(135deg, rgba(255, 80, 0, 0.35), rgba(0, 0, 0, 0.9));
+      background: linear-gradient(135deg, rgba(255, 80, 0, 0.2), rgba(0, 0, 0, 0.8));
       border-radius: 12px;
-      padding: 0.8rem 0.9rem;
-      border: 1px solid rgba(255, 90, 0, 0.6);
-      box-shadow: 0 0 24px rgba(255, 80, 0, 0.3);
-      box-sizing: border-box;
+      padding: 0.7rem 0.85rem;
+      border: 1px solid rgba(255, 90, 0, 0.35);
+      box-shadow: 0 0 16px rgba(255, 80, 0, 0.12);
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .cultist-card:hover {
+      border-color: rgba(255, 90, 0, 0.55);
+      box-shadow: 0 0 24px rgba(255, 80, 0, 0.2);
     }
 
     .cultist-title {
-      font-size: 0.8rem;
+      font-size: 0.72rem;
       text-transform: uppercase;
       letter-spacing: 0.12em;
-      margin-bottom: 0.35rem;
+      margin-bottom: 0.3rem;
       color: #ffe0a0;
     }
 
     .cultist-amount {
-      font-size: 1.25rem;
+      font-size: 1.15rem;
       font-weight: 800;
     }
 
     .cultist-usd {
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       font-weight: 700;
       color: #9be7ff;
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 0.75rem 0;
+    }
+
+    /* Footer */
+    .widget-footer {
+      text-align: center;
+      margin-top: 1rem;
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.05em;
+    }
+
+    .widget-footer span {
+      color: var(--accent);
+      opacity: 0.5;
     }
   </style>
 </head>
 <body>
 <div class="asdf-widget">
+  <!-- Header with price ticker -->
+  <div class="widget-header">
+    <div class="widget-title">
+      ASDF Burn Tracker
+    </div>
+    <div class="price-ticker">
+      <div>
+        <span class="price-label">ASDF</span>
+        <span class="price-value" id="headerAsdfPrice">--</span>
+      </div>
+      <div>
+        <span class="price-label">SOL</span>
+        <span class="price-value" id="headerSolPrice">--</span>
+      </div>
+    </div>
+  </div>
+
   <div class="asdf-widget-grid">
-    <!-- LEFT: Burn progress (unchanged visually) -->
+    <!-- LEFT: Burn progress -->
     <section>
       <div class="section-card">
         <div class="section-subtitle">ASDFASDFA Token</div>
@@ -300,16 +460,16 @@
         <div class="burn-stats">
           <span>
             Burned:
-            <span class="burn-percent-text" id="burnPercent">--</span>%
+            <span class="burn-percent-text loading-pulse" id="burnPercent">--</span><span class="burn-percent-text">%</span>
           </span>
           <span>
             Removed from circulation:
-            <span class="mono" id="burnAmount">--</span> /
+            <span class="mono loading-pulse" id="burnAmount">--</span> /
             <span class="mono">1,000,000,000</span> ASDFASDFA
           </span>
           <span>
             Current supply:
-            <span class="mono" id="currentSupply">--</span> ASDFASDFA
+            <span class="mono loading-pulse" id="currentSupply">--</span> ASDFASDFA
           </span>
         </div>
 
@@ -317,7 +477,6 @@
           <div class="burn-bar-bg">
             <div class="burn-bar-fill" id="burnBarFill"></div>
 
-            <!-- Flame walls at 0, 5, 10, 15, 20, 25 -->
             <div class="burn-wall" style="left: 0%;"></div>
             <div class="burn-wall" style="left: 20%;"></div>
             <div class="burn-wall" style="left: 40%;"></div>
@@ -325,7 +484,7 @@
             <div class="burn-wall" style="left: 80%;"></div>
             <div class="burn-wall" style="left: 100%;"></div>
 
-            <div class="burn-current-flame" id="burnCurrentFlame">🔥</div>
+            <div class="burn-current-flame" id="burnCurrentFlame">\uD83D\uDD25</div>
           </div>
 
           <div class="burn-scale">
@@ -338,7 +497,10 @@
           </div>
         </div>
 
-        <div class="status-line" id="burnStatus">Loading burn data via Helius…</div>
+        <div class="status-line" id="burnStatus">
+          <span class="status-dot"></span>
+          <span>Loading burn data via Helius...</span>
+        </div>
       </div>
     </section>
 
@@ -348,45 +510,50 @@
         <div class="section-subtitle">Wallet Tracker</div>
         <h2>Flame Ledger</h2>
 
-        <div class="label mono" style="font-size:0.75rem;">
-          Address: <span id="walletDisplay">vcGYZbvDid6cRUkCCqcWpBxow73TLpmY6ipmDUtrTF8</span>
+        <div class="wallet-address mono" id="walletDisplay">
+          vcGYZbvDid6cRUkCCqcWpBxow73TLpmY6ipmDUtrTF8
         </div>
 
         <div class="wallet-main-stats">
           <div class="stat-card">
-            <div class="stat-title">CTO Fees Recived</div>
+            <div class="stat-title">CTO Fees Received</div>
             <div class="stat-value-main">
-              <span id="ctoFeesSol">--</span> <span class="mono">SOL</span>
+              <span class="loading-pulse" id="ctoFeesSol">--</span> <span class="mono" style="font-size:0.85rem;">SOL</span>
             </div>
-            <div class="stat-title" style="margin-top:0.35rem;">USD Value</div>
+            <div class="stat-title" style="margin-top:0.3rem;">USD Value (Historical)</div>
             <div class="stat-value-sub" id="ctoFeesUsd">--</div>
           </div>
 
           <div class="stat-card">
             <div class="stat-title">ASDF Purchased (From DuhR...)</div>
-            <div class="stat-value-main" id="purchasedFromSource">--</div>
+            <div class="stat-value-main loading-pulse" id="purchasedFromSource">--</div>
           </div>
         </div>
 
-        <div style="margin-top: 0.9rem;">
-          <h3>Cultist Donations</h3>
-          <div class="cultist-grid">
-            <div class="cultist-card">
-              <div class="cultist-title">ASDF Sacrificed</div>
-              <div class="cultist-amount" id="asdfSacrificed">--</div>
-            </div>
-            <div class="cultist-card">
-              <div class="cultist-title">USD Value</div>
-              <div class="cultist-usd" id="asdfSacrificedUsd">--</div>
-            </div>
+        <div class="divider"></div>
+
+        <h3>Cultist Donations</h3>
+        <div class="cultist-grid">
+          <div class="cultist-card">
+            <div class="cultist-title">ASDF Sacrificed</div>
+            <div class="cultist-amount loading-pulse" id="asdfSacrificed">--</div>
+          </div>
+          <div class="cultist-card">
+            <div class="cultist-title">USD Value</div>
+            <div class="cultist-usd loading-pulse" id="asdfSacrificedUsd">--</div>
           </div>
         </div>
 
         <div class="status-line" id="walletStatus">
-          Loading wallet history and price data (Helius + CoinGecko + Jupiter)…
+          <span class="status-dot"></span>
+          <span>Loading wallet history and price data...</span>
         </div>
       </div>
     </section>
+  </div>
+
+  <div class="widget-footer">
+    <span id="lastUpdatedFooter">Waiting for data...</span>
   </div>
 </div>
 
@@ -395,27 +562,21 @@
     // --- CONFIG ----------------------------------------------------------------
     const TOKEN_MINT = "9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump";
     const TOKEN_TICKER_SHORT = "ASDF";
-    const TOKEN_TICKER_LONG = "ASDFASDFA";
     const TOKEN_TOTAL_SUPPLY = 1_000_000_000;
 
     const TRACKED_WALLET = "vcGYZbvDid6cRUkCCqcWpBxow73TLpmY6ipmDUtrTF8";
-
-    // Any ASDF received FROM this address is treated as "purchased"
     const PURCHASE_SOURCE_ADDRESS = "DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb";
 
     const HELIUS_API_KEY = "f171f1e4-6e9a-4295-b4d6-a7b43a968c6a";
     const HELIUS_RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
     const HELIUS_ENHANCED_BASE = "https://api-mainnet.helius-rpc.com/v0";
 
-    // CoinGecko Demo API (for historical SOL pricing)
     const COINGECKO_DEMO_KEY = "CG-KsYLbF8hxVytbPTNyLXe7vWA";
     const COINGECKO_SOL_ID = "solana";
     const COINGECKO_BASE = "https://api.coingecko.com/api/v3";
 
-    // Jupiter price API
     const JUP_PRICE_URL = "https://lite-api.jup.ag/price/v3";
 
-    // Global burned amount (ASDFASDFA removed from circulation)
     let burnedGlobal = null;
 
     // --- DOM REFS --------------------------------------------------------------
@@ -433,6 +594,10 @@
     const asdfSacrificedEl = document.getElementById("asdfSacrificed");
     const asdfSacrificedUsdEl = document.getElementById("asdfSacrificedUsd");
     const walletStatusEl = document.getElementById("walletStatus");
+
+    const headerAsdfPriceEl = document.getElementById("headerAsdfPrice");
+    const headerSolPriceEl = document.getElementById("headerSolPrice");
+    const lastUpdatedFooterEl = document.getElementById("lastUpdatedFooter");
 
     walletDisplayEl.textContent = TRACKED_WALLET;
 
@@ -453,6 +618,22 @@
 
     function clamp(v, min, max) {
       return Math.max(min, Math.min(max, v));
+    }
+
+    function setStatus(el, text, state) {
+      const dot = el.querySelector(".status-dot");
+      const span = el.querySelector("span:last-child") || el;
+      span.textContent = text;
+      el.className = "status-line" + (state ? " " + state : "");
+    }
+
+    function clearLoadingPulse(el) {
+      el.classList.remove("loading-pulse");
+    }
+
+    function updateLastUpdated() {
+      const now = new Date();
+      lastUpdatedFooterEl.textContent = "Last updated: " + now.toLocaleTimeString();
     }
 
     // --- BURN SECTION ----------------------------------------------------------
@@ -505,12 +686,12 @@
 
     async function updateBurnSection() {
       try {
-        burnStatusEl.textContent = "Loading burn data via Helius…";
+        setStatus(burnStatusEl, "Loading burn data via Helius...", "");
 
         const currentSupply = await fetchCurrentTokenSupplyUi();
 
-        const burned = TOKEN_TOTAL_SUPPLY - currentSupply; // total burnt amount
-        burnedGlobal = burned; // share with wallet section
+        const burned = TOKEN_TOTAL_SUPPLY - currentSupply;
+        burnedGlobal = burned;
 
         const burnedPercent = (burned / TOKEN_TOTAL_SUPPLY) * 100;
 
@@ -518,17 +699,22 @@
         burnAmountEl.textContent = formatInteger(burned);
         currentSupplyEl.textContent = formatInteger(currentSupply);
 
+        clearLoadingPulse(burnPercentEl);
+        clearLoadingPulse(burnAmountEl);
+        clearLoadingPulse(currentSupplyEl);
+
         updateBurnBar(burnedPercent);
 
-        burnStatusEl.textContent = "Burn data loaded.";
-        burnStatusEl.classList.remove("error");
+        setStatus(burnStatusEl, "Burn data loaded.", "success");
       } catch (err) {
         console.error(err);
-        burnStatusEl.textContent = "Failed to load burn data.";
-        burnStatusEl.classList.add("error");
+        setStatus(burnStatusEl, "Failed to load burn data.", "error");
         burnPercentEl.textContent = "--";
         burnAmountEl.textContent = "--";
         currentSupplyEl.textContent = "--";
+        clearLoadingPulse(burnPercentEl);
+        clearLoadingPulse(burnAmountEl);
+        clearLoadingPulse(currentSupplyEl);
         burnedGlobal = null;
       }
     }
@@ -593,7 +779,7 @@
       return { receipts, totalLamports, totalSol };
     }
 
-    // --- COINGECKO HISTORICAL PRICES (DEMO) -----------------------------------
+    // --- COINGECKO HISTORICAL PRICES -------------------------------------------
 
     async function fetchSolHistoricalPrices(fromSec, toSec) {
       const from = Math.max(0, fromSec - 3600);
@@ -611,7 +797,7 @@
 
       if (!res.ok) {
         throw new Error(
-          `CoinGecko market_chart/range (demo) failed: HTTP ${res.status}`
+          `CoinGecko market_chart/range failed: HTTP ${res.status}`
         );
       }
 
@@ -656,10 +842,8 @@
       return totalUsd;
     }
 
-    // --- TOKEN FLOWS WITH ADDRESS-BASED "PURCHASED" LOGIC ---------------------
+    // --- TOKEN FLOWS -----------------------------------------------------------
 
-    // totalReceived: all ASDF tokens ever received by wallet
-    // purchasedFromSource: ASDF received where fromUserAccount === PURCHASE_SOURCE_ADDRESS
     function computeTokenFlows(transactions, wallet, mint) {
       let totalReceived = 0;
       let purchasedFromSource = 0;
@@ -675,10 +859,8 @@
           const amt = rawAmt == null ? 0 : Number(rawAmt);
           if (!isFinite(amt) || amt <= 0) continue;
 
-          // All ASDF received
           totalReceived += amt;
 
-          // Treat any ASDF received FROM the given address as "purchased"
           if ((tt.fromUserAccount || "") === PURCHASE_SOURCE_ADDRESS) {
             purchasedFromSource += amt;
           }
@@ -702,22 +884,54 @@
       return entry.usdPrice;
     }
 
+    async function fetchCurrentSolPrice() {
+      const url = `${COINGECKO_BASE}/simple/price?ids=solana&vs_currencies=usd&x_cg_demo_api_key=${COINGECKO_DEMO_KEY}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`CoinGecko SOL price failed: HTTP ${res.status}`);
+      }
+      const json = await res.json();
+      const price = json?.solana?.usd;
+      if (typeof price !== "number" || price <= 0) {
+        throw new Error("CoinGecko: invalid SOL price");
+      }
+      return price;
+    }
+
+    // --- HEADER PRICE TICKER ---------------------------------------------------
+
+    async function updatePriceTicker() {
+      try {
+        const [asdfPrice, solPrice] = await Promise.allSettled([
+          fetchJupiterUsdPrice(TOKEN_MINT),
+          fetchCurrentSolPrice()
+        ]);
+
+        if (asdfPrice.status === "fulfilled" && asdfPrice.value > 0) {
+          headerAsdfPriceEl.textContent = "$" + asdfPrice.value.toFixed(8);
+        }
+
+        if (solPrice.status === "fulfilled" && solPrice.value > 0) {
+          headerSolPriceEl.textContent = "$" + formatNumber(solPrice.value, 2);
+        }
+      } catch (e) {
+        console.error("Price ticker error:", e);
+      }
+    }
+
     // --- WALLET SECTION UPDATE -------------------------------------------------
 
     async function updateWalletSection() {
       try {
-        walletStatusEl.textContent =
-          "Fetching enhanced transaction history from Helius…";
+        setStatus(walletStatusEl, "Fetching transaction history from Helius...", "");
 
         const txs = await fetchAllEnhancedTransactions(TRACKED_WALLET);
 
-        // Lifetime SOL received (CTO Fees)
         const { receipts, totalSol } = extractSolReceipts(txs, TRACKED_WALLET);
 
         let lifetimeUsd = 0;
         if (receipts.length) {
-          walletStatusEl.textContent =
-            "Fetching historical SOL prices from CoinGecko (demo)…";
+          setStatus(walletStatusEl, "Fetching historical SOL prices...", "");
 
           const timestamps = receipts.map((r) => r.timestamp);
           const minTs = Math.min.apply(null, timestamps);
@@ -727,73 +941,81 @@
           lifetimeUsd = computeLifetimeUsdFromReceipts(receipts, priceSeries);
         }
 
-        // CTO Fees
         ctoFeesSolEl.textContent = formatNumber(totalSol, 2);
         ctoFeesUsdEl.textContent = "$" + formatNumber(lifetimeUsd, 2);
+        clearLoadingPulse(ctoFeesSolEl);
 
-        // Token flows for ASDF with "purchased from specific address" logic
-        walletStatusEl.textContent =
-          "Computing purchased tokens and Cultist Donations…";
+        setStatus(walletStatusEl, "Computing token flows...", "");
 
-        const { totalReceived, purchasedFromSource } = computeTokenFlows(
+        const { purchasedFromSource } = computeTokenFlows(
           txs,
           TRACKED_WALLET,
           TOKEN_MINT
         );
 
-        // Display purchased tokens (from source address), rounded up
         const purchasedRounded = Math.ceil(purchasedFromSource);
         purchasedFromSourceEl.textContent =
           formatInteger(purchasedRounded) + " " + TOKEN_TICKER_SHORT;
+        clearLoadingPulse(purchasedFromSourceEl);
 
-        // ASDFASDFA Sacrificed = total burnt amount - purchased amount
         let sacrificed = 0;
         if (typeof burnedGlobal === "number" && isFinite(burnedGlobal)) {
           sacrificed = Math.max(0, burnedGlobal - purchasedFromSource);
         } else {
           console.warn(
-            "Burned amount unavailable; cannot compute ASDFASDFA Sacrificed from burn."
+            "Burned amount unavailable; cannot compute ASDFASDFA Sacrificed."
           );
-          sacrificed = 0;
         }
 
         const sacrificedRounded = Math.round(sacrificed);
-        asdfSacrificedEl.textContent =
-          formatInteger(sacrificedRounded);
+        asdfSacrificedEl.textContent = formatInteger(sacrificedRounded);
+        clearLoadingPulse(asdfSacrificedEl);
 
-        // Current USD value of sacrificed tokens
         let sacrificedUsdText = "--";
         try {
           const tokenUsdPrice = await fetchJupiterUsdPrice(TOKEN_MINT);
-          const currentUsd = sacrificed * tokenUsdPrice;
-          sacrificedUsdText = "$" + formatNumber(currentUsd, 2);
+          if (sacrificed > 0) {
+            const currentUsd = sacrificed * tokenUsdPrice;
+            sacrificedUsdText = "$" + formatNumber(currentUsd, 2);
+          } else {
+            sacrificedUsdText = "$0.00";
+          }
         } catch (e) {
           console.error("Jupiter price error:", e);
         }
         asdfSacrificedUsdEl.textContent = sacrificedUsdText;
+        clearLoadingPulse(asdfSacrificedUsdEl);
 
-        walletStatusEl.textContent = "Wallet and Cultist data loaded.";
-        walletStatusEl.classList.remove("error");
+        setStatus(walletStatusEl, "Wallet and Cultist data loaded.", "success");
       } catch (err) {
         console.error(err);
-        walletStatusEl.textContent =
-          "Failed to load wallet / donations data. Check API keys, rate limits, and CORS.";
-        walletStatusEl.classList.add("error");
+        setStatus(
+          walletStatusEl,
+          "Failed to load wallet data. Check API keys and rate limits.",
+          "error"
+        );
 
         ctoFeesSolEl.textContent = "--";
         ctoFeesUsdEl.textContent = "--";
         purchasedFromSourceEl.textContent = "--";
-        asdfSacrificedEl.textContent = "-- ASDFASDFA";
+        asdfSacrificedEl.textContent = "--";
         asdfSacrificedUsdEl.textContent = "--";
+
+        [ctoFeesSolEl, purchasedFromSourceEl, asdfSacrificedEl, asdfSacrificedUsdEl].forEach(clearLoadingPulse);
       }
     }
 
     // --- INIT ------------------------------------------------------------------
 
     async function init() {
-      // Ensure burn data is computed before we rely on it for "sacrificed"
+      // Fetch prices for header ticker in parallel with main data
+      updatePriceTicker();
+
+      // Burn must complete first since wallet section depends on burnedGlobal
       await updateBurnSection();
       await updateWalletSection();
+
+      updateLastUpdated();
     }
 
     if (document.readyState === "complete" || document.readyState === "interactive") {
