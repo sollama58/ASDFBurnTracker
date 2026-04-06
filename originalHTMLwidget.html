@@ -6,25 +6,30 @@
   <title>ASDFASDFA Burn & Cultist Donations</title>
   <style>
     :root {
-      --bg: #0a0a0a;
-      --panel-bg: #141414;
+      --bg: #060608;
+      --widget-bg: #0d0d10;
       --accent: #ffd700;
       --accent-soft: #ffe870;
-      --muted: #888888;
-      --muted-light: #aaaaaa;
+      --muted: #666666;
+      --muted-light: #999999;
+      --text: #cccccc;
       --danger: #ff5c33;
-      --border: #1e1e1e;
-      --border-hover: #333333;
-      --card-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.025), rgba(0, 0, 0, 0.5));
-      --glow-orange: rgba(255, 120, 0, 0.15);
-      --glow-gold: rgba(255, 215, 0, 0.08);
+      --border: #1a1a1f;
+      --border-hover: #2a2a30;
+      --card-bg: #111114;
+      --card-bg-hover: #151518;
+      --glow-orange: rgba(255, 120, 0, 0.12);
+      --glow-gold: rgba(255, 215, 0, 0.06);
     }
 
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      margin: 0;
+      min-height: 100vh;
       background: var(--bg);
+      background-image:
+        radial-gradient(ellipse 80% 60% at 50% 0%, rgba(255, 160, 0, 0.04) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 50% 100%, rgba(255, 80, 0, 0.03) 0%, transparent 50%);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color: var(--accent);
       word-break: normal;
@@ -37,6 +42,18 @@
       max-width: 1100px;
       margin: 0 auto;
       padding: 1.5rem;
+      min-height: 100vh;
+    }
+
+    .widget-container {
+      background: var(--widget-bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 1.5rem;
+      box-shadow:
+        0 0 60px rgba(0, 0, 0, 0.5),
+        0 0 120px rgba(255, 140, 0, 0.02),
+        inset 0 1px 0 rgba(255, 255, 255, 0.02);
     }
 
     /* Header */
@@ -45,39 +62,41 @@
       align-items: center;
       justify-content: space-between;
       margin-bottom: 1.25rem;
-      padding: 0 0.25rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
     }
 
     .widget-title {
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       font-weight: 700;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.08em;
       text-transform: uppercase;
       color: var(--accent);
     }
 
-    .widget-title span {
-      color: var(--muted-light);
-      font-weight: 400;
-      font-size: 0.85rem;
-      margin-left: 0.5rem;
-    }
-
     .price-ticker {
       display: flex;
-      gap: 1rem;
+      gap: 1.25rem;
       align-items: center;
       font-size: 0.78rem;
       font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
-      color: var(--muted-light);
+    }
+
+    .price-item {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.3rem 0.6rem;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: 8px;
     }
 
     .price-ticker .price-label {
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      font-size: 0.68rem;
-      margin-right: 0.25rem;
+      font-size: 0.65rem;
     }
 
     .price-ticker .price-value {
@@ -89,6 +108,9 @@
       .widget-header {
         flex-direction: column;
         align-items: flex-start;
+        gap: 0.75rem;
+      }
+      .price-ticker {
         gap: 0.5rem;
       }
     }
@@ -109,7 +131,7 @@
 
     h2 {
       margin: 0 0 0.6rem;
-      font-size: 1.2rem;
+      font-size: 1.15rem;
       letter-spacing: 0.04em;
       text-transform: uppercase;
       color: var(--accent-soft);
@@ -117,7 +139,7 @@
 
     h3 {
       margin: 0 0 0.5rem;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       text-transform: uppercase;
       letter-spacing: 0.05em;
       color: var(--accent-soft);
@@ -125,7 +147,7 @@
 
     .section-card {
       background: var(--card-bg);
-      border-radius: 16px;
+      border-radius: 14px;
       padding: 1.25rem;
       border: 1px solid var(--border);
       transition: border-color 0.3s ease;
@@ -139,11 +161,11 @@
     }
 
     .section-subtitle {
-      font-size: 0.7rem;
+      font-size: 0.65rem;
       text-transform: uppercase;
-      letter-spacing: 0.14em;
+      letter-spacing: 0.16em;
       color: var(--muted);
-      margin-bottom: 0.25rem;
+      margin-bottom: 0.2rem;
     }
 
     .label {
@@ -151,10 +173,6 @@
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: var(--muted);
-    }
-
-    .value-alt {
-      color: #9be7ff;
     }
 
     .mono {
@@ -168,7 +186,7 @@
 
     @keyframes pulse {
       0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
+      50% { opacity: 0.35; }
     }
 
     /* Burn progress bar */
@@ -179,11 +197,12 @@
     .burn-bar-bg {
       position: relative;
       width: 100%;
-      height: 30px;
+      height: 28px;
       border-radius: 999px;
-      background: linear-gradient(90deg, #131313, #1a1a1a);
+      background: #0a0a0c;
       overflow: hidden;
-      box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.8);
+      box-shadow: inset 0 1px 6px rgba(0, 0, 0, 0.9);
+      border: 1px solid var(--border);
     }
 
     .burn-bar-fill {
@@ -194,7 +213,7 @@
       width: 0%;
       border-radius: 999px;
       background: linear-gradient(90deg, #ffcc33, #ff9c33, #ff5c33, #ff2e2e);
-      box-shadow: 0 0 20px rgba(255, 120, 0, 0.5);
+      box-shadow: 0 0 18px rgba(255, 120, 0, 0.45);
       transition: width 1.2s cubic-bezier(0.23, 1, 0.32, 1);
     }
 
@@ -206,21 +225,21 @@
     }
 
     .burn-wall::before {
-      content: "\uD83D\uDD25\uD83D\uDD25\uD83D\uDD25";
+      content: "\1F525\1F525\1F525";
       position: absolute;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -55%);
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       text-shadow: 0 0 6px rgba(255, 120, 0, 1);
-      opacity: 0.6;
+      opacity: 0.5;
     }
 
     .burn-current-flame {
       position: absolute;
       top: 50%;
       transform: translate(-50%, -50%);
-      font-size: 1.3rem;
+      font-size: 1.2rem;
       text-shadow: 0 0 10px rgba(255, 160, 0, 0.9);
       animation: burn-flicker 0.6s infinite alternate ease-in-out;
       pointer-events: none;
@@ -241,7 +260,7 @@
       display: flex;
       justify-content: space-between;
       margin-top: 0.3rem;
-      font-size: 0.68rem;
+      font-size: 0.65rem;
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.08em;
@@ -251,14 +270,15 @@
       display: flex;
       flex-direction: column;
       align-items: flex-start;
-      gap: 0.3rem;
+      gap: 0.35rem;
       margin-top: 0.5rem;
       font-size: 0.8rem;
+      color: var(--text);
     }
 
     .burn-stats span {
       white-space: normal;
-      line-height: 1.4;
+      line-height: 1.5;
     }
 
     .burn-percent-text {
@@ -267,15 +287,10 @@
       font-size: 0.95rem;
     }
 
-    .burn-cap {
-      color: #ff8c8c;
-      font-weight: 600;
-    }
-
     .status-line {
       margin-top: auto;
-      padding-top: 0.6rem;
-      font-size: 0.7rem;
+      padding-top: 0.75rem;
+      font-size: 0.68rem;
       color: var(--muted);
       display: flex;
       align-items: center;
@@ -287,12 +302,12 @@
     }
 
     .status-line.success {
-      color: #5cb85c;
+      color: #4a9;
     }
 
     .status-dot {
-      width: 6px;
-      height: 6px;
+      width: 5px;
+      height: 5px;
       border-radius: 50%;
       background: var(--muted);
       flex-shrink: 0;
@@ -300,21 +315,22 @@
 
     .status-line.error .status-dot {
       background: #ff7a7a;
+      box-shadow: 0 0 4px rgba(255, 122, 122, 0.4);
     }
 
     .status-line.success .status-dot {
-      background: #5cb85c;
-      box-shadow: 0 0 6px rgba(92, 184, 92, 0.5);
+      background: #4a9;
+      box-shadow: 0 0 6px rgba(68, 170, 153, 0.4);
     }
 
     /* Wallet and donations */
     .wallet-address {
-      font-size: 0.72rem;
+      font-size: 0.7rem;
       color: var(--muted);
       word-break: break-all;
-      padding: 0.4rem 0.6rem;
-      background: rgba(255, 255, 255, 0.02);
-      border-radius: 8px;
+      padding: 0.35rem 0.55rem;
+      background: rgba(255, 255, 255, 0.015);
+      border-radius: 6px;
       border: 1px solid var(--border);
       margin-top: 0.15rem;
     }
@@ -333,8 +349,8 @@
     }
 
     .stat-card {
-      background: rgba(255, 255, 255, 0.02);
-      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.015);
+      border-radius: 10px;
       padding: 0.7rem 0.8rem;
       border: 1px solid var(--border);
       transition: border-color 0.3s ease, background 0.3s ease;
@@ -342,11 +358,11 @@
 
     .stat-card:hover {
       border-color: var(--border-hover);
-      background: rgba(255, 255, 255, 0.035);
+      background: rgba(255, 255, 255, 0.025);
     }
 
     .stat-title {
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       text-transform: uppercase;
       letter-spacing: 0.1em;
       color: var(--muted);
@@ -360,7 +376,7 @@
     }
 
     .stat-value-sub {
-      font-size: 0.88rem;
+      font-size: 0.85rem;
       color: var(--accent-soft);
     }
 
@@ -378,21 +394,21 @@
     }
 
     .cultist-card {
-      background: linear-gradient(135deg, rgba(255, 80, 0, 0.2), rgba(0, 0, 0, 0.8));
-      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(255, 80, 0, 0.12), rgba(0, 0, 0, 0.6));
+      border-radius: 10px;
       padding: 0.7rem 0.85rem;
-      border: 1px solid rgba(255, 90, 0, 0.35);
-      box-shadow: 0 0 16px rgba(255, 80, 0, 0.12);
+      border: 1px solid rgba(255, 90, 0, 0.25);
+      box-shadow: 0 0 20px rgba(255, 80, 0, 0.06);
       transition: border-color 0.3s ease, box-shadow 0.3s ease;
     }
 
     .cultist-card:hover {
-      border-color: rgba(255, 90, 0, 0.55);
-      box-shadow: 0 0 24px rgba(255, 80, 0, 0.2);
+      border-color: rgba(255, 90, 0, 0.4);
+      box-shadow: 0 0 30px rgba(255, 80, 0, 0.12);
     }
 
     .cultist-title {
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       text-transform: uppercase;
       letter-spacing: 0.12em;
       margin-bottom: 0.3rem;
@@ -400,12 +416,12 @@
     }
 
     .cultist-amount {
-      font-size: 1.15rem;
+      font-size: 1.1rem;
       font-weight: 800;
     }
 
     .cultist-usd {
-      font-size: 1.05rem;
+      font-size: 1rem;
       font-weight: 700;
       color: #9be7ff;
     }
@@ -419,141 +435,138 @@
     /* Footer */
     .widget-footer {
       text-align: center;
-      margin-top: 1rem;
-      font-size: 0.65rem;
+      margin-top: 1.25rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.63rem;
       color: var(--muted);
-      letter-spacing: 0.05em;
-    }
-
-    .widget-footer span {
-      color: var(--accent);
-      opacity: 0.5;
+      letter-spacing: 0.06em;
     }
   </style>
 </head>
 <body>
 <div class="asdf-widget">
-  <!-- Header with price ticker -->
-  <div class="widget-header">
-    <div class="widget-title">
-      ASDF Burn Tracker
-    </div>
-    <div class="price-ticker">
-      <div>
-        <span class="price-label">ASDF</span>
-        <span class="price-value" id="headerAsdfPrice">--</span>
-      </div>
-      <div>
-        <span class="price-label">SOL</span>
-        <span class="price-value" id="headerSolPrice">--</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="asdf-widget-grid">
-    <!-- LEFT: Burn progress -->
-    <section>
-      <div class="section-card">
-        <div class="section-subtitle">ASDFASDFA Token</div>
-        <h2>Burn Progress</h2>
-
-        <div class="burn-stats">
-          <span>
-            Burned:
-            <span class="burn-percent-text loading-pulse" id="burnPercent">--</span><span class="burn-percent-text">%</span>
-          </span>
-          <span>
-            Removed from circulation:
-            <span class="mono loading-pulse" id="burnAmount">--</span> /
-            <span class="mono">1,000,000,000</span> ASDFASDFA
-          </span>
-          <span>
-            Current supply:
-            <span class="mono loading-pulse" id="currentSupply">--</span> ASDFASDFA
-          </span>
+  <div class="widget-container">
+    <!-- Header with price ticker -->
+    <div class="widget-header">
+      <div class="widget-title">ASDF Burn Tracker</div>
+      <div class="price-ticker">
+        <div class="price-item">
+          <span class="price-label">ASDF</span>
+          <span class="price-value" id="headerAsdfPrice">--</span>
         </div>
+        <div class="price-item">
+          <span class="price-label">SOL</span>
+          <span class="price-value" id="headerSolPrice">--</span>
+        </div>
+      </div>
+    </div>
 
-        <div class="burn-bar-wrapper">
-          <div class="burn-bar-bg">
-            <div class="burn-bar-fill" id="burnBarFill"></div>
+    <div class="asdf-widget-grid">
+      <!-- LEFT: Burn progress -->
+      <section>
+        <div class="section-card">
+          <div class="section-subtitle">ASDFASDFA Token</div>
+          <h2>Burn Progress</h2>
 
-            <div class="burn-wall" style="left: 0%;"></div>
-            <div class="burn-wall" style="left: 20%;"></div>
-            <div class="burn-wall" style="left: 40%;"></div>
-            <div class="burn-wall" style="left: 60%;"></div>
-            <div class="burn-wall" style="left: 80%;"></div>
-            <div class="burn-wall" style="left: 100%;"></div>
-
-            <div class="burn-current-flame" id="burnCurrentFlame">\uD83D\uDD25</div>
+          <div class="burn-stats">
+            <span>
+              Burned:
+              <span class="burn-percent-text loading-pulse" id="burnPercent">--</span><span class="burn-percent-text">%</span>
+            </span>
+            <span>
+              Removed from circulation:
+              <span class="mono loading-pulse" id="burnAmount">--</span> /
+              <span class="mono">1,000,000,000</span> ASDFASDFA
+            </span>
+            <span>
+              Current supply:
+              <span class="mono loading-pulse" id="currentSupply">--</span> ASDFASDFA
+            </span>
           </div>
 
-          <div class="burn-scale">
-            <span>0%</span>
-            <span>5%</span>
-            <span>10%</span>
-            <span>15%</span>
-            <span>20%</span>
-            <span>25%</span>
-          </div>
-        </div>
+          <div class="burn-bar-wrapper">
+            <div class="burn-bar-bg">
+              <div class="burn-bar-fill" id="burnBarFill"></div>
 
-        <div class="status-line" id="burnStatus">
-          <span class="status-dot"></span>
-          <span>Loading burn data via Helius...</span>
-        </div>
-      </div>
-    </section>
+              <div class="burn-wall" style="left: 0%;"></div>
+              <div class="burn-wall" style="left: 20%;"></div>
+              <div class="burn-wall" style="left: 40%;"></div>
+              <div class="burn-wall" style="left: 60%;"></div>
+              <div class="burn-wall" style="left: 80%;"></div>
+              <div class="burn-wall" style="left: 100%;"></div>
 
-    <!-- RIGHT: Wallet tracker -->
-    <section>
-      <div class="section-card">
-        <div class="section-subtitle">Wallet Tracker</div>
-        <h2>Flame Ledger</h2>
-
-        <div class="wallet-address mono" id="walletDisplay">
-          vcGYZbvDid6cRUkCCqcWpBxow73TLpmY6ipmDUtrTF8
-        </div>
-
-        <div class="wallet-main-stats">
-          <div class="stat-card">
-            <div class="stat-title">CTO Fees Received</div>
-            <div class="stat-value-main">
-              <span class="loading-pulse" id="ctoFeesSol">--</span> <span class="mono" style="font-size:0.85rem;">SOL</span>
+              <div class="burn-current-flame" id="burnCurrentFlame">&#x1F525;</div>
             </div>
-            <div class="stat-title" style="margin-top:0.3rem;">USD Value (Historical)</div>
-            <div class="stat-value-sub" id="ctoFeesUsd">--</div>
+
+            <div class="burn-scale">
+              <span>0%</span>
+              <span>5%</span>
+              <span>10%</span>
+              <span>15%</span>
+              <span>20%</span>
+              <span>25%</span>
+            </div>
           </div>
 
-          <div class="stat-card">
-            <div class="stat-title">ASDF Purchased (From DuhR...)</div>
-            <div class="stat-value-main loading-pulse" id="purchasedFromSource">--</div>
-          </div>
-        </div>
-
-        <div class="divider"></div>
-
-        <h3>Cultist Donations</h3>
-        <div class="cultist-grid">
-          <div class="cultist-card">
-            <div class="cultist-title">ASDF Sacrificed</div>
-            <div class="cultist-amount loading-pulse" id="asdfSacrificed">--</div>
-          </div>
-          <div class="cultist-card">
-            <div class="cultist-title">USD Value</div>
-            <div class="cultist-usd loading-pulse" id="asdfSacrificedUsd">--</div>
+          <div class="status-line" id="burnStatus">
+            <span class="status-dot"></span>
+            <span>Loading burn data via Helius...</span>
           </div>
         </div>
+      </section>
 
-        <div class="status-line" id="walletStatus">
-          <span class="status-dot"></span>
-          <span>Loading wallet history and price data...</span>
+      <!-- RIGHT: Wallet tracker -->
+      <section>
+        <div class="section-card">
+          <div class="section-subtitle">Wallet Tracker</div>
+          <h2>Flame Ledger</h2>
+
+          <div class="wallet-address mono" id="walletDisplay">
+            vcGYZbvDid6cRUkCCqcWpBxow73TLpmY6ipmDUtrTF8
+          </div>
+
+          <div class="wallet-main-stats">
+            <div class="stat-card">
+              <div class="stat-title">CTO Fees Received</div>
+              <div class="stat-value-main">
+                <span class="loading-pulse" id="ctoFeesSol">--</span> <span class="mono" style="font-size:0.85rem;">SOL</span>
+              </div>
+              <div class="stat-title" style="margin-top:0.3rem;">USD Value (Historical)</div>
+              <div class="stat-value-sub" id="ctoFeesUsd">--</div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-title">ASDF Purchased (From DuhR...)</div>
+              <div class="stat-value-main loading-pulse" id="purchasedFromSource">--</div>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <h3>Cultist Donations</h3>
+          <div class="cultist-grid">
+            <div class="cultist-card">
+              <div class="cultist-title">ASDF Sacrificed</div>
+              <div class="cultist-amount loading-pulse" id="asdfSacrificed">--</div>
+            </div>
+            <div class="cultist-card">
+              <div class="cultist-title">USD Value</div>
+              <div class="cultist-usd loading-pulse" id="asdfSacrificedUsd">--</div>
+            </div>
+          </div>
+
+          <div class="status-line" id="walletStatus">
+            <span class="status-dot"></span>
+            <span>Loading wallet history and price data...</span>
+          </div>
         </div>
-      </div>
-    </section>
-  </div>
+      </section>
+    </div>
 
-  <div class="widget-footer">
-    <span id="lastUpdatedFooter">Waiting for data...</span>
+    <div class="widget-footer">
+      <span id="lastUpdatedFooter">Waiting for data...</span>
+    </div>
   </div>
 </div>
 
@@ -621,9 +634,8 @@
     }
 
     function setStatus(el, text, state) {
-      const dot = el.querySelector(".status-dot");
-      const span = el.querySelector("span:last-child") || el;
-      span.textContent = text;
+      const span = el.querySelector("span:last-child");
+      if (span) span.textContent = text;
       el.className = "status-line" + (state ? " " + state : "");
     }
 
@@ -1008,10 +1020,8 @@
     // --- INIT ------------------------------------------------------------------
 
     async function init() {
-      // Fetch prices for header ticker in parallel with main data
       updatePriceTicker();
 
-      // Burn must complete first since wallet section depends on burnedGlobal
       await updateBurnSection();
       await updateWalletSection();
 
