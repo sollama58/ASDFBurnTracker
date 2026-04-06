@@ -13,7 +13,7 @@ function debugLog(category, message, isError = false) {
     logFunc(`[${timestamp}] [${category.toUpperCase()}] ${message}`);
 }
 
-// --- FILE SYSTEM CONFIG (Needed for Historical Cache) ---
+// --- FILE SYSTEM CONFIG ---
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const path = require('path');
@@ -23,41 +23,74 @@ const DATA_DIR = fsSync.existsSync(RENDER_DISK_PATH) ? RENDER_DISK_PATH : path.j
 if (!fsSync.existsSync(DATA_DIR)) fsSync.mkdirSync(DATA_DIR);
 
 const HISTORICAL_SOL_PRICE_FILE = path.join(DATA_DIR, 'historical_sol_prices.json');
-const HISTORICAL_CACHE_DURATION_MS = 6 * 60 * 60 * 1000; // 6 hours
+const CACHE_FILE = path.join(DATA_DIR, 'cache.json');
 
-// --- CACHING VARIABLES ---
+// --- CACHE TIMING ---
+const DATA_REFRESH_MS = 2 * 60 * 60 * 1000;   // 2 hours: Burn + Wallet (heavy lift)
+const PRICE_REFRESH_MS = 30 * 60 * 1000;       // 30 minutes: SOL + ASDF spot prices
+const HISTORICAL_CACHE_MS = 6 * 60 * 60 * 1000; // 6 hours: CoinGecko historical prices
+
+// --- CACHE STATE ---
 let cache = {
     burn: {},
-    wallet: { tokenPriceUsd: 0, solPriceUsd: 0 },
-    lastUpdated: 0
+    wallet: {},
+    prices: { tokenPriceUsd: 0, solPriceUsd: 0 },
+    dataLastUpdated: 0,
+    pricesLastUpdated: 0
 };
-const FAST_CACHE_MS = 60000; // 1 minute: Burn/Wallet Stats
-const SLOW_CACHE_MS = 10 * 60000; // 10 minutes: Price Updates (SOL & ASDF)
-let cacheCycleCount = 0; // Tracks cycles for the 10-minute check
+let dataFetchInProgress = false;
+let priceFetchInProgress = false;
 
 // --- CONFIGURATION & VALIDATION ---
-const HELIUS_API_KEY = process.env.HELIUS_API_KEY; 
+const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
 const JUPITER_API_KEY = process.env.JUPITER_API_KEY || "";
 
 if (!HELIUS_API_KEY) {
     debugLog("INIT", "FATAL: HELIUS_API_KEY environment variable is not set.", true);
-    process.exit(1); 
+    process.exit(1);
 }
 
-const TOKEN_MINT = "9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump"; // ASDF Contract Address
+const TOKEN_MINT = "9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump";
 const TOKEN_TOTAL_SUPPLY = 1_000_000_000;
 const TRACKED_WALLET = "vcGYZbvDid6cRUkCCqcWpBxow73TLpmY6ipmDUtrTF8";
 const PURCHASE_SOURCE_ADDRESS = "DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb";
 
 const HELIUS_RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
 const HELIUS_ENHANCED_BASE = "https://api-mainnet.helius-rpc.com/v0";
-const COINGECKO_DEMO_KEY = process.env.COINGECKO_API_KEY || "CG-KsYLbF8hxVytbPTNyLXe7vWA"; 
+const COINGECKO_DEMO_KEY = process.env.COINGECKO_API_KEY || "CG-KsYLbF8hxVytbPTNyLXe7vWA";
 const COINGECKO_BASE = "https://api.coingecko.com/api/v3";
 const JUP_PRICE_URL = "https://lite-api.jup.ag/price/v3";
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// --- DISK CACHE PERSISTENCE ---
+
+async function saveCacheToDisk() {
+    try {
+        await fs.writeFile(CACHE_FILE, JSON.stringify(cache));
+        debugLog("DISK_CACHE", "Cache persisted to disk.");
+    } catch (e) {
+        debugLog("DISK_CACHE", `Failed to persist cache: ${e.message}`, true);
+    }
+}
+
+function loadCacheFromDisk() {
+    try {
+        if (!fsSync.existsSync(CACHE_FILE)) return false;
+        const raw = fsSync.readFileSync(CACHE_FILE, 'utf8');
+        const loaded = JSON.parse(raw);
+        if (loaded && loaded.dataLastUpdated) {
+            cache = loaded;
+            debugLog("DISK_CACHE", `Cache restored from disk. Data age: ${((Date.now() - cache.dataLastUpdated) / 60000).toFixed(0)}min, Price age: ${((Date.now() - cache.pricesLastUpdated) / 60000).toFixed(0)}min`);
+            return true;
+        }
+    } catch (e) {
+        debugLog("DISK_CACHE", `Failed to load cache from disk: ${e.message}`, true);
+    }
+    return false;
+}
 
 // --- UTILITY: EXPONENTIAL BACKOFF FOR API CALLS ---
 async function exponentialBackoffFetch(url, options = {}, maxRetries = 5, category = "API") {
@@ -68,9 +101,9 @@ async function exponentialBackoffFetch(url, options = {}, maxRetries = 5, catego
 
             if (res.status === 429 || res.status >= 500) {
                 const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
-                debugLog(category, `Attempt ${attempt + 1}: Received HTTP ${res.status}. Retrying in ${delay.toFixed(0)}ms...`);
+                debugLog(category, `Attempt ${attempt + 1}: HTTP ${res.status}. Retrying in ${delay.toFixed(0)}ms...`);
                 await new Promise(resolve => setTimeout(resolve, delay));
-                continue; 
+                continue;
             }
             throw new Error(`API failed with non-retryable status: ${res.status}`);
 
@@ -86,53 +119,33 @@ async function exponentialBackoffFetch(url, options = {}, maxRetries = 5, catego
     throw new Error(`${category} failed after ${maxRetries} attempts.`);
 }
 
-// --- PRICE FETCHING LOGIC ---
+// --- PRICE FETCHING ---
 
 async function fetchCurrentSolPrice() {
-    try {
-        const url = `${COINGECKO_BASE}/simple/price?ids=solana&vs_currencies=usd&x_cg_demo_api_key=${COINGECKO_DEMO_KEY}`;
-        const res = await exponentialBackoffFetch(url, {}, 5, "COINGECKO_SOL");
-        const json = await res.json();
-        const price = json?.solana?.usd || 0;
-
-        if (price > 0) {
-            debugLog("COINGECKO_SOL", `Current SOL price fetched: $${price.toFixed(2)}`);
-            return price;
-        }
-        throw new Error("SOL price not found or zero.");
-    } catch (e) {
-        debugLog("COINGECKO_SOL", `Failed to fetch SOL price: ${e.message}`, true);
-        return 0;
-    }
+    const url = `${COINGECKO_BASE}/simple/price?ids=solana&vs_currencies=usd&x_cg_demo_api_key=${COINGECKO_DEMO_KEY}`;
+    const res = await exponentialBackoffFetch(url, {}, 5, "COINGECKO_SOL");
+    const json = await res.json();
+    const price = json?.solana?.usd || 0;
+    if (price <= 0) throw new Error("SOL price not found or zero.");
+    debugLog("COINGECKO_SOL", `Current SOL price: $${price.toFixed(2)}`);
+    return price;
 }
 
 async function fetchJupiterTokenPrice(mint) {
-    let tokenPriceUsd = 0;
-    let jupUrl = `${JUP_PRICE_URL}?ids=${mint}`;
-    debugLog("JUPITER", `Requesting Jupiter URL: ${jupUrl}`);
-    
+    const jupUrl = `${JUP_PRICE_URL}?ids=${mint}`;
     const jupOptions = JUPITER_API_KEY ? { headers: { 'Authorization': `Bearer ${JUPITER_API_KEY}` } } : {};
 
-    try {
-        const jupRes = await exponentialBackoffFetch(jupUrl, jupOptions, 5, "JUPITER"); 
-        const jupJson = await jupRes.json();
-        
-        const tokenData = jupJson?.[mint];
-        tokenPriceUsd = tokenData?.usdPrice || 0;
-        
-        if (tokenPriceUsd > 0) {
-            debugLog("JUPITER", `Price successfully fetched for ${mint}: $${tokenPriceUsd.toFixed(10)}`);
-        } else {
-            debugLog("JUPITER", `Price returned 0 or structure invalid.`, true);
-        }
+    const jupRes = await exponentialBackoffFetch(jupUrl, jupOptions, 5, "JUPITER");
+    const jupJson = await jupRes.json();
 
-    } catch (e) { 
-        debugLog("JUPITER", `Failed to update price: ${e.message}`, true);
-    }
+    const tokenPriceUsd = jupJson?.[mint]?.usdPrice || 0;
+    if (tokenPriceUsd <= 0) throw new Error("ASDF price returned 0 or structure invalid.");
+    debugLog("JUPITER", `ASDF price: $${tokenPriceUsd.toFixed(10)}`);
     return tokenPriceUsd;
 }
 
-// --- LOGIC FUNCTIONS (Unchanged helper functions omitted for brevity) ---
+// --- DATA FETCHING ---
+
 async function fetchCurrentTokenSupplyUi() {
     const body = { jsonrpc: "2.0", id: "burn-supply", method: "getTokenSupply", params: [TOKEN_MINT] };
     const res = await exponentialBackoffFetch(HELIUS_RPC_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, 5, "HELIUS_RPC");
@@ -142,15 +155,16 @@ async function fetchCurrentTokenSupplyUi() {
 }
 
 async function fetchAllEnhancedTransactions(address, maxPages = 20) {
-    const all = []; let before = undefined;
+    const all = [];
+    let before = undefined;
     for (let page = 0; page < maxPages; page++) {
         const url = new URL(`${HELIUS_ENHANCED_BASE}/addresses/${address}/transactions`);
         url.searchParams.set("api-key", HELIUS_API_KEY);
         if (before) url.searchParams.set("before", before);
-        
+
         const res = await exponentialBackoffFetch(url.toString(), {}, 5, "HELIUS_TXS");
         const batch = await res.json();
-        
+
         if (!Array.isArray(batch) || batch.length === 0) break;
         all.push(...batch);
 
@@ -162,50 +176,54 @@ async function fetchAllEnhancedTransactions(address, maxPages = 20) {
 }
 
 function extractSolReceipts(transactions, wallet) {
-    const receipts = []; let totalLamports = 0n;
+    const receipts = [];
+    let totalLamports = 0n;
     for (const tx of transactions) {
-        const ts = tx.timestamp; const transfers = tx.nativeTransfers || [];
-        for (const nt of transfers) {
+        const ts = tx.timestamp;
+        for (const nt of (tx.nativeTransfers || [])) {
             if (nt.toUserAccount !== wallet) continue;
-            const rawAmt = nt.amount; if (rawAmt == null) continue;
-            const lamports = BigInt(rawAmt.toString()); if (lamports <= 0n) continue;
+            const rawAmt = nt.amount;
+            if (rawAmt == null) continue;
+            const lamports = BigInt(rawAmt.toString());
+            if (lamports <= 0n) continue;
             totalLamports += lamports;
             receipts.push({ lamports: lamports.toString(), timestamp: ts });
         }
     }
-    const totalSol = Number(totalLamports) / 1e9;
-    return { receipts, totalSol };
+    return { receipts, totalSol: Number(totalLamports) / 1e9 };
 }
 
 async function fetchSolHistoricalPrices(fromSec, toSec) {
     let cachedData = null;
     try {
         const stats = await fs.stat(HISTORICAL_SOL_PRICE_FILE);
-        if (Date.now() - stats.mtimeMs < HISTORICAL_CACHE_DURATION_MS) {
+        if (Date.now() - stats.mtimeMs < HISTORICAL_CACHE_MS) {
             const rawData = await fs.readFile(HISTORICAL_SOL_PRICE_FILE, 'utf8');
             cachedData = JSON.parse(rawData);
-            debugLog("COINGECKO_CACHE", "Serving historical prices from local cache.");
+            debugLog("COINGECKO_CACHE", "Serving historical prices from disk cache.");
             return cachedData;
         }
     } catch (e) {
-        // File doesn't exist or failed to parse, proceed to fetch
+        // File doesn't exist or failed to parse
     }
 
     debugLog("COINGECKO_CACHE", "Fetching new historical prices from CoinGecko...");
-    const from = Math.max(0, fromSec - 3600); const to = toSec + 3600;
+    const from = Math.max(0, fromSec - 3600);
+    const to = toSec + 3600;
     const url = new URL(`${COINGECKO_BASE}/coins/solana/market_chart/range`);
-    url.searchParams.set("vs_currency", "usd"); url.searchParams.set("from", String(from)); url.searchParams.set("to", String(to));
+    url.searchParams.set("vs_currency", "usd");
+    url.searchParams.set("from", String(from));
+    url.searchParams.set("to", String(to));
     url.searchParams.set("x_cg_demo_api_key", COINGECKO_DEMO_KEY);
 
     try {
         const res = await exponentialBackoffFetch(url.toString(), {}, 5, "COINGECKO");
         const json = await res.json();
         const prices = json.prices.map(([tMs, price]) => ({ tMs: Number(tMs), priceUsd: Number(price) }));
-        
         await fs.writeFile(HISTORICAL_SOL_PRICE_FILE, JSON.stringify(prices));
-        debugLog("COINGECKO_CACHE", "Successfully fetched and cached new historical prices.");
+        debugLog("COINGECKO_CACHE", "Historical prices fetched and cached to disk.");
         return prices;
-    } catch(e) {
+    } catch (e) {
         debugLog("COINGECKO", `Failed to fetch historical SOL prices: ${e.message}`, true);
         return cachedData || [];
     }
@@ -225,9 +243,8 @@ function computeLifetimeUsd(receipts, priceSeries) {
     };
     for (const r of receipts) {
         const tMs = r.timestamp * 1000;
-        const priceUsd = nearestPrice(tMs);
         const solAmount = Number(r.lamports) / 1e9;
-        totalUsd += solAmount * priceUsd;
+        totalUsd += solAmount * nearestPrice(tMs);
     }
     return totalUsd;
 }
@@ -235,12 +252,9 @@ function computeLifetimeUsd(receipts, priceSeries) {
 function computeTokenFlows(transactions, wallet, mint) {
     let purchasedFromSource = 0;
     for (const tx of transactions) {
-        const tokenTransfers = tx.tokenTransfers || [];
-        for (const tt of tokenTransfers) {
-            if (tt.mint !== mint) continue;
-            if (tt.toUserAccount !== wallet) continue;
-            const rawAmt = tt.tokenAmount;
-            const amt = rawAmt == null ? 0 : Number(rawAmt);
+        for (const tt of (tx.tokenTransfers || [])) {
+            if (tt.mint !== mint || tt.toUserAccount !== wallet) continue;
+            const amt = tt.tokenAmount == null ? 0 : Number(tt.tokenAmount);
             if (!Number.isFinite(amt) || amt <= 0) continue;
             if ((tt.fromUserAccount || "") === PURCHASE_SOURCE_ADDRESS) {
                 purchasedFromSource += amt;
@@ -251,136 +265,161 @@ function computeTokenFlows(transactions, wallet, mint) {
 }
 
 
-// --- ASYNC CACHING JOBS ---
+// --- CACHE REFRESH JOBS ---
 
-/**
- * Executes every 1 minute. Handles heavy lift and aggregation.
- */
-async function fetchAndCacheData() {
-    debugLog("CACHE_MAIN", "Starting data fetch (Heavy Lift & Aggregation)...");
-    
-    let currentSupply, totalSol, lifetimeUsd, purchasedFromSource;
+async function refreshData() {
+    if (dataFetchInProgress) {
+        debugLog("CACHE_DATA", "Skipping: previous data fetch still in progress.");
+        return;
+    }
+    dataFetchInProgress = true;
+    debugLog("CACHE_DATA", "Starting data refresh (burn + wallet)...");
 
     try {
-        // --- 1. BURN DATA ---
-        currentSupply = await fetchCurrentTokenSupplyUi();
+        // 1. Burn data
+        const currentSupply = await fetchCurrentTokenSupplyUi();
         const burned = TOKEN_TOTAL_SUPPLY - currentSupply;
         const burnedPercent = (burned / TOKEN_TOTAL_SUPPLY) * 100;
-        cache.burn = { burnedAmount: burned, currentSupply, burnedPercent };
 
-        // --- 2. WALLET DATA (HELIUS TXS & COINGECKO HISTORICAL) ---
+        // 2. Wallet transaction history
         const txs = await fetchAllEnhancedTransactions(TRACKED_WALLET);
-        const { receipts, totalSol: calculatedSol } = extractSolReceipts(txs, TRACKED_WALLET);
-        totalSol = calculatedSol;
+        const { receipts, totalSol } = extractSolReceipts(txs, TRACKED_WALLET);
 
+        let lifetimeUsd = 0;
         if (receipts.length > 0) {
             const timestamps = receipts.map(r => r.timestamp);
             const prices = await fetchSolHistoricalPrices(Math.min(...timestamps), Math.max(...timestamps));
             lifetimeUsd = computeLifetimeUsd(receipts, prices);
-        } else {
-            lifetimeUsd = 0;
         }
 
-        const { purchasedFromSource: calculatedPurchased } = computeTokenFlows(txs, TRACKED_WALLET, TOKEN_MINT);
-        purchasedFromSource = calculatedPurchased;
-        
-        // --- 3. CACHE STORAGE ---
-        cache.wallet = { 
-            ctoFeesSol: totalSol, 
-            ctoFeesUsd: lifetimeUsd, 
-            purchasedFromSource, 
-            tokenPriceUsd: cache.wallet.tokenPriceUsd, // Keep existing slow cache price
-            solPriceUsd: cache.wallet.solPriceUsd // Keep existing slow cache price
-        };
-        
-        cache.lastUpdated = Date.now();
-        debugLog("CACHE_MAIN", "Heavy lift data successfully cached.");
+        const { purchasedFromSource } = computeTokenFlows(txs, TRACKED_WALLET, TOKEN_MINT);
+
+        // 3. Store — prices are managed separately, never overwritten here
+        cache.burn = { burnedAmount: burned, currentSupply, burnedPercent };
+        cache.wallet = { ctoFeesSol: totalSol, ctoFeesUsd: lifetimeUsd, purchasedFromSource };
+        cache.dataLastUpdated = Date.now();
+
+        debugLog("CACHE_DATA", `Data refresh complete. Burned: ${burnedPercent.toFixed(2)}%, CTO Fees: ${totalSol.toFixed(2)} SOL`);
+        await saveCacheToDisk();
 
     } catch (error) {
-        debugLog("CACHE_MAIN", `Failed to update cache (Heavy Lift): ${error.message}`, true);
-        cache.lastUpdated = Date.now(); 
+        debugLog("CACHE_DATA", `Data refresh failed: ${error.message}`, true);
+        // Do NOT update dataLastUpdated on failure — stale data is better than no timestamp
+    } finally {
+        dataFetchInProgress = false;
     }
 }
 
-/**
- * Executes every 10 minutes. Updates only SOL and ASDF spot prices.
- */
-async function fetchTokenPriceStaggered() {
-    
-    // Check if it's the 1st cycle (timeSinceInit < 2 min) or a 10-minute multiple (10m / 1m = 10 cycles)
-    // We run it on cycle 0 and every 10th cycle thereafter.
-    if (cacheCycleCount % 10 !== 0) {
-        debugLog("CACHE_PRICE", `Skipping price update on cycle ${cacheCycleCount}. Next in ${10 - (cacheCycleCount % 10)} min.`);
+async function refreshPrices() {
+    if (priceFetchInProgress) {
+        debugLog("CACHE_PRICE", "Skipping: previous price fetch still in progress.");
         return;
     }
+    priceFetchInProgress = true;
+    debugLog("CACHE_PRICE", "Starting price refresh (SOL + ASDF)...");
 
-    debugLog("CACHE_PRICE", "Starting 10-minute price fetch (SOL & ASDF)...");
-    
-    // Fetch ASDF price using reliable Jupiter API
-    const tokenPriceUsd = await fetchJupiterTokenPrice(TOKEN_MINT);
-    // Fetch SOL price using reliable CoinGecko API
-    const solPriceUsd = await fetchCurrentSolPrice();
+    try {
+        const [tokenPriceUsd, solPriceUsd] = await Promise.all([
+            fetchJupiterTokenPrice(TOKEN_MINT).catch(e => {
+                debugLog("JUPITER", `Price fetch failed: ${e.message}`, true);
+                return cache.prices.tokenPriceUsd; // Keep previous on failure
+            }),
+            fetchCurrentSolPrice().catch(e => {
+                debugLog("COINGECKO_SOL", `Price fetch failed: ${e.message}`, true);
+                return cache.prices.solPriceUsd; // Keep previous on failure
+            })
+        ]);
 
-    cache.wallet.tokenPriceUsd = tokenPriceUsd;
-    cache.wallet.solPriceUsd = solPriceUsd;
-    cache.lastUpdated = Date.now(); // Update timestamp to show fresh price data
-    debugLog("CACHE_PRICE", `ASDF Price: $${tokenPriceUsd.toFixed(10)}, SOL Price: $${solPriceUsd.toFixed(2)}`);
+        cache.prices = { tokenPriceUsd, solPriceUsd };
+        cache.pricesLastUpdated = Date.now();
+
+        debugLog("CACHE_PRICE", `Prices updated. ASDF: $${tokenPriceUsd.toFixed(10)}, SOL: $${solPriceUsd.toFixed(2)}`);
+        await saveCacheToDisk();
+
+    } catch (error) {
+        debugLog("CACHE_PRICE", `Price refresh failed: ${error.message}`, true);
+    } finally {
+        priceFetchInProgress = false;
+    }
 }
 
 
-// --- INITIALIZATION AND SCHEDULING ---
+// --- INITIALIZATION ---
 
-// 1. Initial Main Fetch (Sets up initial wallet/burn stats)
-fetchAndCacheData(); 
+async function initialize() {
+    // Try to restore cache from disk first for instant availability
+    const restored = loadCacheFromDisk();
 
-// 2. Initial Price Fetch (Staggered 30 seconds after main job starts for initial prices)
-// Note: We MUST run this immediately on the first cycle.
-setTimeout(() => {
-    fetchTokenPriceStaggered();
-    cacheCycleCount++; // Immediately increment after first staggered run
-    
-    // Start recurring price checker after initial stagger
-    setInterval(() => {
-        fetchTokenPriceStaggered();
-        cacheCycleCount++;
-    }, FAST_CACHE_MS);
+    if (restored) {
+        // Check if cached data is still fresh enough
+        const dataAge = Date.now() - cache.dataLastUpdated;
+        const priceAge = Date.now() - cache.pricesLastUpdated;
 
-}, 30000); 
+        if (dataAge > DATA_REFRESH_MS) {
+            debugLog("INIT", "Disk cache data is stale, refreshing...");
+            refreshData(); // Fire and forget — disk cache serves in the meantime
+        } else {
+            debugLog("INIT", `Disk cache data is fresh (${(dataAge / 60000).toFixed(0)}min old). Next refresh in ${((DATA_REFRESH_MS - dataAge) / 60000).toFixed(0)}min.`);
+        }
 
-// 3. Schedule Recurring Heavy Lift (Every 1 minute)
-setInterval(fetchAndCacheData, FAST_CACHE_MS);
+        if (priceAge > PRICE_REFRESH_MS) {
+            debugLog("INIT", "Disk cache prices are stale, refreshing...");
+            refreshPrices();
+        } else {
+            debugLog("INIT", `Disk cache prices are fresh (${(priceAge / 60000).toFixed(0)}min old). Next refresh in ${((PRICE_REFRESH_MS - priceAge) / 60000).toFixed(0)}min.`);
+        }
+    } else {
+        // No disk cache — must fetch everything
+        debugLog("INIT", "No disk cache found. Fetching all data...");
+        await refreshData();
+        await refreshPrices();
+    }
+
+    // Schedule recurring refreshes
+    setInterval(refreshData, DATA_REFRESH_MS);
+    setInterval(refreshPrices, PRICE_REFRESH_MS);
+
+    debugLog("INIT", `Scheduled: data every ${DATA_REFRESH_MS / 60000}min, prices every ${PRICE_REFRESH_MS / 60000}min.`);
+}
+
+initialize();
 
 
 // --- API ROUTES ---
 
-// Middleware to check if cache is ready
 function checkCache(req, res, next) {
-    if (cache.lastUpdated === 0) {
-        debugLog("API_STATUS", "Serving 503: Cache initializing.");
+    if (cache.dataLastUpdated === 0) {
         return res.status(503).json({ error: "Service unavailable, initializing data cache." });
     }
     next();
 }
 
-// Status Route: Check if the server is alive
 app.get('/', (req, res) => {
-    const cacheAge = Date.now() - cache.lastUpdated;
-    res.send({ 
-        status: 'ok', 
-        message: 'ASDF Tracker Backend is running and serving cached data.',
-        cacheAge: `${(cacheAge / 1000).toFixed(0)} seconds old`,
-        lastPrice: cache.wallet.tokenPriceUsd
+    const dataAge = Date.now() - cache.dataLastUpdated;
+    const priceAge = Date.now() - cache.pricesLastUpdated;
+    res.json({
+        status: 'ok',
+        message: 'ASDF Tracker Backend is running.',
+        dataAge: `${(dataAge / 1000).toFixed(0)}s`,
+        priceAge: `${(priceAge / 1000).toFixed(0)}s`,
+        nextDataRefresh: `${Math.max(0, (DATA_REFRESH_MS - dataAge) / 60000).toFixed(0)}min`,
+        nextPriceRefresh: `${Math.max(0, (PRICE_REFRESH_MS - priceAge) / 60000).toFixed(0)}min`
     });
 });
 
-// Endpoint: Burn Stats - serves cached data
 app.get('/api/burn', checkCache, (req, res) => {
-    res.json({ ...cache.burn, lastUpdated: cache.lastUpdated });
+    res.json({
+        ...cache.burn,
+        lastUpdated: cache.dataLastUpdated
+    });
 });
 
-// Endpoint: Wallet Stats - serves cached data
 app.get('/api/wallet', checkCache, (req, res) => {
-    res.json({ ...cache.wallet, lastUpdated: cache.lastUpdated });
+    res.json({
+        ...cache.wallet,
+        ...cache.prices,
+        lastUpdated: Math.max(cache.dataLastUpdated, cache.pricesLastUpdated)
+    });
 });
 
 app.listen(PORT, () => {
