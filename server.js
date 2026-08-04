@@ -57,8 +57,8 @@ const PURCHASE_SOURCE_ADDRESS = "DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb";
 
 const HELIUS_RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
 const HELIUS_ENHANCED_BASE = "https://api-mainnet.helius-rpc.com/v0";
-const COINGECKO_DEMO_KEY = process.env.COINGECKO_API_KEY || "CG-KsYLbF8hxVytbPTNyLXe7vWA";
-const COINGECKO_BASE = "https://api.coingecko.com/api/v3";
+const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY || "CG-KsYLbF8hxVytbPTNyLXe7vWA";
+const COINGECKO_BASE = "https://pro-api.coingecko.com/api/v3";
 const JUP_PRICE_URL = "https://lite-api.jup.ag/price/v3";
 
 // Middleware
@@ -95,26 +95,29 @@ function loadCacheFromDisk() {
 // --- UTILITY: EXPONENTIAL BACKOFF FOR API CALLS ---
 async function exponentialBackoffFetch(url, options = {}, maxRetries = 5, category = "API") {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
+        let res;
         try {
-            const res = await fetch(url, options);
-            if (res.ok) return res;
-
-            if (res.status === 429 || res.status >= 500) {
-                const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
-                debugLog(category, `Attempt ${attempt + 1}: HTTP ${res.status}. Retrying in ${delay.toFixed(0)}ms...`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                continue;
-            }
-            throw new Error(`API failed with non-retryable status: ${res.status}`);
-
-        } catch (error) {
+            res = await fetch(url, options);
+        } catch (networkError) {
             if (attempt === maxRetries - 1) {
-                throw new Error(`API failed after ${maxRetries} attempts: ${error.message}`);
+                throw new Error(`${category} failed after ${maxRetries} attempts: ${networkError.message}`);
             }
             const delay = Math.pow(2, attempt) * 500 + Math.random() * 500;
-            debugLog(category, `Attempt ${attempt + 1}: Network error (${error.message}). Retrying in ${delay.toFixed(0)}ms...`, true);
+            debugLog(category, `Attempt ${attempt + 1}: Network error (${networkError.message}). Retrying in ${delay.toFixed(0)}ms...`, true);
             await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
         }
+
+        if (res.ok) return res;
+
+        if (res.status === 429 || res.status >= 500) {
+            const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
+            debugLog(category, `Attempt ${attempt + 1}: HTTP ${res.status}. Retrying in ${delay.toFixed(0)}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+        }
+
+        throw new Error(`API failed with non-retryable status: ${res.status}`);
     }
     throw new Error(`${category} failed after ${maxRetries} attempts.`);
 }
@@ -122,12 +125,29 @@ async function exponentialBackoffFetch(url, options = {}, maxRetries = 5, catego
 // --- PRICE FETCHING ---
 
 async function fetchCurrentSolPrice() {
-    const url = `${COINGECKO_BASE}/simple/price?ids=solana&vs_currencies=usd&x_cg_demo_api_key=${COINGECKO_DEMO_KEY}`;
-    const res = await exponentialBackoffFetch(url, {}, 5, "COINGECKO_SOL");
+    // Try CoinGecko first
+    try {
+        const url = `${COINGECKO_BASE}/simple/price?ids=solana&vs_currencies=usd&x_cg_pro_api_key=${COINGECKO_API_KEY}`;
+        const res = await exponentialBackoffFetch(url, {}, 3, "COINGECKO_SOL");
+        const json = await res.json();
+        const price = json?.solana?.usd || 0;
+        if (price > 0) {
+            debugLog("COINGECKO_SOL", `Current SOL price: $${price.toFixed(2)}`);
+            return price;
+        }
+    } catch (e) {
+        debugLog("COINGECKO_SOL", `CoinGecko failed, falling back to Jupiter: ${e.message}`, true);
+    }
+
+    // Fallback: Jupiter price for wrapped SOL
+    const SOL_MINT = "So11111111111111111111111111111111111111112";
+    const jupUrl = `${JUP_PRICE_URL}?ids=${SOL_MINT}`;
+    const jupOptions = JUPITER_API_KEY ? { headers: { 'Authorization': `Bearer ${JUPITER_API_KEY}` } } : {};
+    const res = await exponentialBackoffFetch(jupUrl, jupOptions, 5, "JUPITER_SOL");
     const json = await res.json();
-    const price = json?.solana?.usd || 0;
-    if (price <= 0) throw new Error("SOL price not found or zero.");
-    debugLog("COINGECKO_SOL", `Current SOL price: $${price.toFixed(2)}`);
+    const price = json?.[SOL_MINT]?.usdPrice || 0;
+    if (price <= 0) throw new Error("Jupiter SOL price returned 0 or structure invalid.");
+    debugLog("JUPITER_SOL", `Current SOL price (Jupiter fallback): $${price.toFixed(2)}`);
     return price;
 }
 
@@ -214,7 +234,7 @@ async function fetchSolHistoricalPrices(fromSec, toSec) {
     url.searchParams.set("vs_currency", "usd");
     url.searchParams.set("from", String(from));
     url.searchParams.set("to", String(to));
-    url.searchParams.set("x_cg_demo_api_key", COINGECKO_DEMO_KEY);
+    url.searchParams.set("x_cg_pro_api_key", COINGECKO_API_KEY);
 
     try {
         const res = await exponentialBackoffFetch(url.toString(), {}, 5, "COINGECKO");

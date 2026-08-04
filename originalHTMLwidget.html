@@ -584,9 +584,9 @@
     const HELIUS_RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
     const HELIUS_ENHANCED_BASE = "https://api-mainnet.helius-rpc.com/v0";
 
-    const COINGECKO_DEMO_KEY = "CG-KsYLbF8hxVytbPTNyLXe7vWA";
+    const COINGECKO_API_KEY = "CG-KsYLbF8hxVytbPTNyLXe7vWA";
     const COINGECKO_SOL_ID = "solana";
-    const COINGECKO_BASE = "https://api.coingecko.com/api/v3";
+    const COINGECKO_BASE = "https://pro-api.coingecko.com/api/v3";
 
     const JUP_PRICE_URL = "https://lite-api.jup.ag/price/v3";
 
@@ -812,7 +812,7 @@
       url.searchParams.set("vs_currency", "usd");
       url.searchParams.set("from", String(from));
       url.searchParams.set("to", String(to));
-      url.searchParams.set("x_cg_demo_api_key", COINGECKO_DEMO_KEY);
+      url.searchParams.set("x_cg_pro_api_key", COINGECKO_API_KEY);
 
       const res = await fetch(url.toString());
 
@@ -907,7 +907,7 @@
 
     async function fetchCurrentSolPrice() {
       try {
-        const url = `${COINGECKO_BASE}/simple/price?ids=solana&vs_currencies=usd&x_cg_demo_api_key=${COINGECKO_DEMO_KEY}`;
+        const url = `${COINGECKO_BASE}/simple/price?ids=solana&vs_currencies=usd&x_cg_pro_api_key=${COINGECKO_API_KEY}`;
         const res = await fetch(url);
         if (res.ok) {
           const json = await res.json();
