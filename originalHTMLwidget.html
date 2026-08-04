@@ -744,7 +744,14 @@
         url.searchParams.set("api-key", HELIUS_API_KEY);
         if (before) url.searchParams.set("before", before);
 
-        const res = await fetch(url.toString());
+        let res;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          res = await fetch(url.toString());
+          if (res.status !== 429) break;
+          const delay = Math.pow(2, attempt) * 1000 + Math.random() * 500;
+          await new Promise(r => setTimeout(r, delay));
+        }
+
         if (!res.ok) {
           throw new Error(
             `Helius enhanced transactions failed (page ${page}): HTTP ${res.status}`
@@ -761,6 +768,8 @@
         before = last.signature;
 
         if (batch.length < 90) break;
+
+        await new Promise(r => setTimeout(r, 300));
       }
 
       return all;
@@ -897,17 +906,27 @@
     }
 
     async function fetchCurrentSolPrice() {
-      const url = `${COINGECKO_BASE}/simple/price?ids=solana&vs_currencies=usd&x_cg_demo_api_key=${COINGECKO_DEMO_KEY}`;
+      try {
+        const url = `${COINGECKO_BASE}/simple/price?ids=solana&vs_currencies=usd&x_cg_demo_api_key=${COINGECKO_DEMO_KEY}`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const json = await res.json();
+          const price = json?.solana?.usd;
+          if (typeof price === "number" && price > 0) return price;
+        }
+      } catch (_) {}
+
+      // Fallback: Jupiter price for wrapped SOL
+      const SOL_MINT = "So11111111111111111111111111111111111111112";
+      const url = `${JUP_PRICE_URL}?ids=${encodeURIComponent(SOL_MINT)}`;
       const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(`CoinGecko SOL price failed: HTTP ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`Jupiter SOL price failed: HTTP ${res.status}`);
       const json = await res.json();
-      const price = json?.solana?.usd;
-      if (typeof price !== "number" || price <= 0) {
-        throw new Error("CoinGecko: invalid SOL price");
+      const entry = json[SOL_MINT] || (json.data && json.data[SOL_MINT]);
+      if (!entry || typeof entry.usdPrice !== "number") {
+        throw new Error("Jupiter: missing usdPrice for SOL");
       }
-      return price;
+      return entry.usdPrice;
     }
 
     // --- HEADER PRICE TICKER ---------------------------------------------------
