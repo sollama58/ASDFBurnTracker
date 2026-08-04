@@ -427,6 +427,28 @@ app.get('/', (req, res) => {
     });
 });
 
+app.get('/api/historical-prices', async (req, res) => {
+    const from = parseInt(req.query.from, 10);
+    const to = parseInt(req.query.to, 10);
+    if (!from || !to || from >= to) {
+        return res.status(400).json({ error: "Query params 'from' and 'to' (unix seconds) are required." });
+    }
+    try {
+        const prices = await fetchSolHistoricalPrices(from, to);
+        res.json(prices);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/prices', (req, res) => {
+    res.json({
+        solPriceUsd: cache.prices.solPriceUsd,
+        tokenPriceUsd: cache.prices.tokenPriceUsd,
+        lastUpdated: cache.pricesLastUpdated
+    });
+});
+
 app.get('/api/burn', checkCache, (req, res) => {
     res.json({
         ...cache.burn,

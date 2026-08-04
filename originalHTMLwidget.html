@@ -580,15 +580,11 @@
     const TRACKED_WALLET = "vcGYZbvDid6cRUkCCqcWpBxow73TLpmY6ipmDUtrTF8";
     const PURCHASE_SOURCE_ADDRESS = "DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb";
 
+    const SERVER_URL = "https://asdfburntracker.onrender.com";
+
     const HELIUS_API_KEY = "f171f1e4-6e9a-4295-b4d6-a7b43a968c6a";
     const HELIUS_RPC_URL = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
     const HELIUS_ENHANCED_BASE = "https://api-mainnet.helius-rpc.com/v0";
-
-    const COINGECKO_API_KEY = "CG-KsYLbF8hxVytbPTNyLXe7vWA";
-    const COINGECKO_SOL_ID = "solana";
-    const COINGECKO_BASE = "https://pro-api.coingecko.com/api/v3";
-
-    const JUP_PRICE_URL = "https://lite-api.jup.ag/price/v3";
 
     let burnedGlobal = null;
 
@@ -800,37 +796,13 @@
       return { receipts, totalLamports, totalSol };
     }
 
-    // --- COINGECKO HISTORICAL PRICES -------------------------------------------
+    // --- HISTORICAL SOL PRICES (via server cache) --------------------------------
 
     async function fetchSolHistoricalPrices(fromSec, toSec) {
-      const from = Math.max(0, fromSec - 3600);
-      const to = toSec + 3600;
-
-      const url = new URL(
-        `${COINGECKO_BASE}/coins/${COINGECKO_SOL_ID}/market_chart/range`
-      );
-      url.searchParams.set("vs_currency", "usd");
-      url.searchParams.set("from", String(from));
-      url.searchParams.set("to", String(to));
-      url.searchParams.set("x_cg_pro_api_key", COINGECKO_API_KEY);
-
-      const res = await fetch(url.toString());
-
-      if (!res.ok) {
-        throw new Error(
-          `CoinGecko market_chart/range failed: HTTP ${res.status}`
-        );
-      }
-
-      const json = await res.json();
-      if (!Array.isArray(json.prices)) {
-        throw new Error("CoinGecko response missing prices[]");
-      }
-
-      return json.prices.map(([tMs, price]) => ({
-        tMs: Number(tMs),
-        priceUsd: Number(price)
-      }));
+      const url = `${SERVER_URL}/api/historical-prices?from=${fromSec}&to=${toSec}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Historical prices failed: HTTP ${res.status}`);
+      return res.json();
     }
 
     function nearestPriceUsd(priceSeries, targetMs) {
@@ -891,42 +863,26 @@
       return { totalReceived, purchasedFromSource };
     }
 
+    async function fetchServerPrices() {
+      const res = await fetch(`${SERVER_URL}/api/prices`);
+      if (!res.ok) throw new Error(`Server prices failed: HTTP ${res.status}`);
+      return res.json();
+    }
+
     async function fetchJupiterUsdPrice(mint) {
-      const url = `${JUP_PRICE_URL}?ids=${encodeURIComponent(mint)}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(`Jupiter price API failed: HTTP ${res.status}`);
+      const { tokenPriceUsd } = await fetchServerPrices();
+      if (typeof tokenPriceUsd !== "number" || tokenPriceUsd <= 0) {
+        throw new Error("Server: missing tokenPriceUsd");
       }
-      const json = await res.json();
-      const entry = json[mint] || (json.data && json.data[mint]);
-      if (!entry || typeof entry.usdPrice !== "number") {
-        throw new Error("Jupiter: missing usdPrice for token");
-      }
-      return entry.usdPrice;
+      return tokenPriceUsd;
     }
 
     async function fetchCurrentSolPrice() {
-      try {
-        const url = `${COINGECKO_BASE}/simple/price?ids=solana&vs_currencies=usd&x_cg_pro_api_key=${COINGECKO_API_KEY}`;
-        const res = await fetch(url);
-        if (res.ok) {
-          const json = await res.json();
-          const price = json?.solana?.usd;
-          if (typeof price === "number" && price > 0) return price;
-        }
-      } catch (_) {}
-
-      // Fallback: Jupiter price for wrapped SOL
-      const SOL_MINT = "So11111111111111111111111111111111111111112";
-      const url = `${JUP_PRICE_URL}?ids=${encodeURIComponent(SOL_MINT)}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Jupiter SOL price failed: HTTP ${res.status}`);
-      const json = await res.json();
-      const entry = json[SOL_MINT] || (json.data && json.data[SOL_MINT]);
-      if (!entry || typeof entry.usdPrice !== "number") {
-        throw new Error("Jupiter: missing usdPrice for SOL");
+      const { solPriceUsd } = await fetchServerPrices();
+      if (typeof solPriceUsd !== "number" || solPriceUsd <= 0) {
+        throw new Error("Server: missing solPriceUsd");
       }
-      return entry.usdPrice;
+      return solPriceUsd;
     }
 
     // --- HEADER PRICE TICKER ---------------------------------------------------
